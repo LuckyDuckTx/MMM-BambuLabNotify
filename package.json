@@ -1,0 +1,6 @@
+{
+  "name": "MMM-BambuNotify",
+  "version": "1.0.0",
+  "main": "MMM-BambuNotify.js",
+  "dependencies": { "mqtt": "^5.10.0" }
+}
