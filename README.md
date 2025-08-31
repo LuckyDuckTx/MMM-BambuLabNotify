@@ -28,7 +28,7 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
 
 ## Screenshot
 
-![screenshot](screenshot.jpg)
+![screenshot](./screenshot.jpg)
 
 --- 
 
@@ -38,7 +38,7 @@ From your MagicMirror `modules` folder:
 
 ```bash
 cd ~/MagicMirror/modules
-git clone https://github.com/LuckyDuckTx/MMM-BambuLabNotify
+git clone https://github.com/LuckyDuckTx/MMM-BambuLabNotify.git
 cd MMM-BambuLabNotify
 npm install
 ```
