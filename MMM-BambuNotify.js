@@ -1,4 +1,4 @@
-/* MMM-BambuNotify.js (stable UI) */
+/* MMM-BambuNotify.js */
 Module.register("MMM-BambuNotify", {
   defaults: {
     host: "192.168.86.100",
@@ -15,7 +15,7 @@ Module.register("MMM-BambuNotify", {
     progressStep: 5,
     hideProgressWhenIdle: true,
 
-    toastStyle: "modal",      // "modal" | "corner"
+    toastStyle: "modal",   // "modal" | "corner"
     toastDurationMs: 60000,
     overlayOpacity: 0.5,
 
@@ -117,7 +117,7 @@ Module.register("MMM-BambuNotify", {
         const meta = document.createElement("div");
         meta.className = "bambu-meta";
         const etaText = (this.config.showRemaining && this.state.remaining) ? ` • ${this._esc(this.state.remaining)}` : "";
-        meta.innerText = `${pct}%`; // FIXME: remaining time `${pct}%${etaText}`;
+        meta.innerText = `${pct}%`; // FIXME: remaining time isn't always showing `${pct}%${etaText}`;
         wrap.appendChild(meta);
       } else if (status === "preparing" || status === "running") {
         const meta = document.createElement("div");

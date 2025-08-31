@@ -14,8 +14,7 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
 
 - 📡 Real-time printer status via MQTT over TLS  
 - 🔔 Toast notifications for:
-  - Print started  
-  - Print paused / resumed  
+  - Print started
   - Print canceled  
   - Print finished  
   - Error conditions  
@@ -59,7 +58,7 @@ npm install
     serial: "YOUR-PRINTER-SERIAL",  // Serial Number from printer
 
     // Toast Message options
-    toastDurationMs: 60000,         // 1 minute
+    toastDurationMs: 60000, 
     showOnStart: true,
     showOnDone: true,
     showOnError: true,
@@ -82,7 +81,7 @@ npm install
 | `idleTimeoutMs`     | Number  | `180000`     | Auto-reset to idle if no messages received for this duration (ms).                                    |
 | `doneQuietWindowMs` | Number  | `120000`     | Suppresses ghost finish/error events if printer hasn’t been recently active (helps after reconnects). |
 | `assumeIdleAfterMs` | Number  | `8000`       | Fallback: if nothing arrives after connect, assume Idle to clear “Connecting…” state.                 |
-| ** For Toasts Messages ** ||||
+| ** Toasts Messages ** ||||
 | `toastDurationMs`   | Number  | `60000`      | How long toast notifications remain visible (milliseconds).                                           |
 | `toastStyle`        | String  | `modal`      | Where the toast messages display. "modal" (center + overlay) or "corner" (top-right)                  |
 | `showOnStart`       | String  | `true`       | Show Toast while connecting                                                                           |

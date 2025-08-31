@@ -418,6 +418,7 @@ module.exports = NodeHelper.create({
       if (stateChanged && state === "paused") {
         this.lastAlertAt.pause = nowTs;
         if (this.config.showOnPause) {
+          // FIXME: The toast isn't working
           this._alertOnce("pause", `${Pname} Paused`,
             this.lastFile ? `${this.lastFile} paused.` : "Print paused.",
             8000, "info");
