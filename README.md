@@ -61,7 +61,6 @@ npm install
     // Toast Message options
     toastDurationMs: 60000,         // 1 minute
     showOnStart: true,
-    showOnPause: true,
     showOnDone: true,
     showOnError: true,
     showOnIdle: true, 
@@ -75,7 +74,7 @@ npm install
 | `printerName`       | String  | `"Bambu A1"` | Name shown in the panel and toasts.                                                                   |
 | `port`              | Number  | `8883"`      | MQTT Port on printer                                                                                  |
 | `user`              | String  | `bblp`       | MQTT user on printer                                                                                  |
-| `idleAfterCancelMs` | Number  | `120000`     | Time after cancel before panel resets to Idle (milliseconds).                                         |
+| `idleAfterCancelMs` | Number  | `60000`      | Time after cancel before panel resets to Idle (milliseconds).                                         |
 | `progressStep`      | Number  | `5`          | Bucket size for progress updates. Example: `5` → updates at 0%, 5%, 10% …                             |
 | `debounceMs`        | Number  | `15000`      | Minimum time between identical toast notifications (prevents spam).                                   |
 | `logRaw`            | Boolean | `false`      | If `true`, logs every raw MQTT message to console (very noisy).                                       |
@@ -83,20 +82,19 @@ npm install
 | `idleTimeoutMs`     | Number  | `180000`     | Auto-reset to idle if no messages received for this duration (ms).                                    |
 | `doneQuietWindowMs` | Number  | `120000`     | Suppresses ghost finish/error events if printer hasn’t been recently active (helps after reconnects). |
 | `assumeIdleAfterMs` | Number  | `8000`       | Fallback: if nothing arrives after connect, assume Idle to clear “Connecting…” state.                 |
-| ** For Toasts Messages ** | | | |
+| ** For Toasts Messages ** |
 | `toastDurationMs`   | Number  | `60000`      | How long toast notifications remain visible (milliseconds).                                           |
 | `toastStyle`        | String. | `modal`.     | Where the toast messages display. "modal" (center + overlay) or "corner" (top-right)                  |
 | `showOnStart`       | String. | `true`.      | Show Toast while connecting                                                                           |
-| `showOnPause`       | String. | `true`.      | Show Toast on Pause                                                                                   |
 | `showOnDone`        | String. | `true`.      | Show Toast when print is finished                                                                     |
-| `showOnError`       | String. | `true`.      | Show Toast when an error occurs                                                                       |
+| `showOnError`       | String. | `true`.      | Show Toast when an error or cancel occurs                                                             |
 | `showOnIdle`        | String. | `true`.      | Show Toast when printer becomes idle                                                                  |
 
 
 ## 🛠 Notes
 
 - Works locally on LAN only - MagicMirror and Printer must be on same LAN. 
-- Printer does not need to be in LAN Only Mode. 
+- Printer does not need to be in `LAN Only Mode`. 
 - Tested with Bambu Lab A1 Mini (2025 firmware).
 - All state changes and notifications are logged:
 
@@ -107,7 +105,7 @@ This project is licensed under the MIT License.
 
 ### Credits
 
-- Fully created using ChatGPT 5.0 (OpenAI)
+- Created using ChatGPT 5.0 (OpenAI)
 - Module inspired and tested by LuckyDuckTx.
 ---
    

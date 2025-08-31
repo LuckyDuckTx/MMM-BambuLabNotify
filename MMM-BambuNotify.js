@@ -22,7 +22,7 @@ Module.register("MMM-BambuNotify", {
     showOnStart: true,
     showOnDone: true,
     showOnError: true,
-    showOnPause: true,
+    showOnPause: false, // FIXME: Not working
     showOnIdle: true,
 
     logRaw: false,
@@ -117,7 +117,7 @@ Module.register("MMM-BambuNotify", {
         const meta = document.createElement("div");
         meta.className = "bambu-meta";
         const etaText = (this.config.showRemaining && this.state.remaining) ? ` • ${this._esc(this.state.remaining)}` : "";
-        meta.innerText = `${pct}%${etaText}`;
+        meta.innerText = `${pct}%`; // FIXME: remaining time `${pct}%${etaText}`;
         wrap.appendChild(meta);
       } else if (status === "preparing" || status === "running") {
         const meta = document.createElement("div");

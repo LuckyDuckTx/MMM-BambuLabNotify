@@ -90,7 +90,7 @@ module.exports = NodeHelper.create({
       showOnStart: true,
       showOnDone: true,
       showOnError: true,
-      showOnPause: true,
+      showOnPause: false, // FIXME: Not working
       showOnIdle: true,
 
       progressStep: 5,
@@ -102,7 +102,7 @@ module.exports = NodeHelper.create({
       doneQuietWindowMs: 120000,     // suppress stale done/error if not recently active
       assumeIdleAfterMs: 8000,       // fallback after subscribe -> Idle
       idleAfterCancelMs: 60000,
-      cancelGuardMs: 20000           // suppress FAILED/error noise right after cancel
+      cancelGuardMs: 60000           // suppress FAILED/error noise right after cancel
     }, cfg || {});
 
     if (!this.config.serial) {
