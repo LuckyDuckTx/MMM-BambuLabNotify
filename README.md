@@ -1,4 +1,4 @@
-# MMM-BambuNotify
+# MMM-BambuLabNotify
 
 [![MagicMirror² Module](https://img.shields.io/badge/MagicMirror²-Module-blue)](https://magicmirror.builders/)
 [![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)]()
@@ -32,8 +32,8 @@ From your MagicMirror `modules` folder:
 
 ```bash
 cd ~/MagicMirror/modules
-git clone https://github.com/LuckyDuckTx/MMM-BambuNotify
-cd MMM-BambuNotify
+git clone https://github.com/LuckyDuckTx/MMM-BambuLabNotify
+cd MMM-BambuLabNotify
 npm install
 ```
 
@@ -49,7 +49,7 @@ npm install
 
 ```javascript
 {
-  module: "MMM-BambuNotify",
+  module: "MMM-BambuLabNotify",
   position: "bottom_right",
   config: {
     printerName: "BambuLab A1", 

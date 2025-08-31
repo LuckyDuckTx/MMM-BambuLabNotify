@@ -1,4 +1,4 @@
-/* MMM-BambuNotify: node_helper.js 
+/* MMM-BambuLabNotify: node_helper.js 
    - MQTT over TLS to Bambu LAN broker
    - Subscribes to device/<serial>/report only (most reliable)
    - Start/Done/Error/Cancel toasts
@@ -70,7 +70,7 @@ module.exports = NodeHelper.create({
     this._idleTicker = setInterval(() => this._idleWatch(), 10_000);
     this._postConnectTimer = null;
 
-    console.log("[MMM-BambuNotify] node_helper started");
+    console.log("[MMM-BambuLabNotify] node_helper started");
   },
 
   socketNotificationReceived(n, cfg) {
@@ -106,7 +106,7 @@ module.exports = NodeHelper.create({
     }, cfg || {});
 
     if (!this.config.serial) {
-      console.error("[MMM-BambuNotify] Missing 'serial' in config.");
+      console.error("[MMM-BambuLabNotify] Missing 'serial' in config.");
       return;
     }
 
@@ -124,7 +124,7 @@ module.exports = NodeHelper.create({
       resubscribe: false
     };
 
-    console.log(`[MMM-BambuNotify] Connecting to ${url} as ${options.username} (id ${clientId}) ...`);
+    console.log(`[MMM-BambuLabNotify] Connecting to ${url} as ${options.username} (id ${clientId}) ...`);
     this.client = mqtt.connect(url, options);
 
     const topicReport = `device/${this.config.serial}/report`;
@@ -133,22 +133,22 @@ module.exports = NodeHelper.create({
     this.client.on("connect", (connack) => {
       this.connected = true;
       this.lastState = "connecting";
-      console.log("[MMM-BambuNotify] Connected:", connack);
+      console.log("[MMM-BambuLabNotify] Connected:", connack);
 
       setTimeout(() => {
         this.client.subscribe([topicReport], { qos: 1 }, (err) => {
           if (err) {
-            console.error("[MMM-BambuNotify] Subscribe(report) error:", err?.message || err);
+            console.error("[MMM-BambuLabNotify] Subscribe(report) error:", err?.message || err);
             return;
           }
-          console.log(`[MMM-BambuNotify] Subscribed to ${topicReport}`);
+          console.log(`[MMM-BambuLabNotify] Subscribed to ${topicReport}`);
           this.sendSocketNotification("BN_PROGRESS", { state: "connecting", percent: null, file: "" });
 
           // Assume Idle if nothing meaningful arrives shortly (idle printers are quiet)
           if (this._postConnectTimer) clearTimeout(this._postConnectTimer);
           this._postConnectTimer = setTimeout(() => {
             if (this.connected && this.lastState === "connecting") {
-              console.log("[MMM-BambuNotify] Assume-Idle fallback fired.");
+              console.log("[MMM-BambuLabNotify] Assume-Idle fallback fired.");
               this._setIdleAndBroadcast(false);
             }
           }, Math.max(3000, Number(this.config.assumeIdleAfterMs) || 6000));
@@ -157,26 +157,26 @@ module.exports = NodeHelper.create({
     });
 
     this.client.on("reconnect", () => {
-      console.log("[MMM-BambuNotify] Reconnecting...");
+      console.log("[MMM-BambuLabNotify] Reconnecting...");
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "connecting", percent: null, file: "" });
     });
 
     this.client.on("close", () => {
-      console.log("[MMM-BambuNotify] Connection closed");
+      console.log("[MMM-BambuLabNotify] Connection closed");
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });
 
     this.client.on("error", (e) => {
-      console.error("[MMM-BambuNotify] MQTT error:", e?.message || e);
+      console.error("[MMM-BambuLabNotify] MQTT error:", e?.message || e);
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });
 
     if (this.client && this.client.stream) {
-      this.client.stream.on("error", (e) => console.error("[MMM-BambuNotify] stream error:", e?.message || e));
-      this.client.stream.on("close", () => console.log("[MMM-BambuNotify] stream closed"));
+      this.client.stream.on("error", (e) => console.error("[MMM-BambuLabNotify] stream error:", e?.message || e));
+      this.client.stream.on("close", () => console.log("[MMM-BambuLabNotify] stream closed"));
     }
 
     // ---- message handler
@@ -188,7 +188,7 @@ module.exports = NodeHelper.create({
 
       const txt = buf.toString();
       this.lastMsgAt = Date.now();
-      if (this.config.logRaw) console.log("[MMM-BambuNotify] RX:", topic, txt);
+      if (this.config.logRaw) console.log("[MMM-BambuLabNotify] RX:", topic, txt);
 
       let msg;
       try { msg = JSON.parse(txt); } catch { return; }
@@ -370,7 +370,7 @@ module.exports = NodeHelper.create({
       const recentlyActive = (Date.now() - (this.lastActiveAt || 0)) <= (this.config.doneQuietWindowMs || 120000);
 
       if (this.config.logOnChange && stateChanged) {
-        console.log("[MMM-BambuNotify] State change:", this.lastState, "→", state);
+        console.log("[MMM-BambuLabNotify] State change:", this.lastState, "→", state);
       }
 
       // Suppress stale finish/error after *long* idle (reconnect noise)
@@ -531,7 +531,7 @@ module.exports = NodeHelper.create({
     const now = Date.now();
     if (now - (this.lastAlertAt[key] || 0) < this.config.debounceMs) return;
     this.lastAlertAt[key] = now;
-    console.log(`[MMM-BambuNotify] ALERT → ${title}: ${message}`);
+    console.log(`[MMM-BambuLabNotify] ALERT → ${title}: ${message}`);
     this.sendSocketNotification("BN_ALERT", { title, message, timer, kind });
   },
 
@@ -540,6 +540,6 @@ module.exports = NodeHelper.create({
     try { if (this._postConnectTimer) clearTimeout(this._postConnectTimer); } catch {}
     try { if (this._postCancelTimer) clearTimeout(this._postCancelTimer); } catch {}
     try { if (this.client) this.client.end(true); } catch {}
-    console.log("[MMM-BambuNotify] node_helper stopped");
+    console.log("[MMM-BambuLabNotify] node_helper stopped");
   }
 });

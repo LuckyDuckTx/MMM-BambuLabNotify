@@ -1,5 +1,5 @@
-/* MMM-BambuNotify.js */
-Module.register("MMM-BambuNotify", {
+/* MMM-BambuLabNotify.js */
+Module.register("MMM-BambuLabNotify", {
   defaults: {
     host: "192.168.86.100",
     port: 8883,
@@ -30,7 +30,7 @@ Module.register("MMM-BambuNotify", {
   },
 
   start() {
-    Log.info("[MMM-BambuNotify] start()");
+    Log.info("[MMM-BambuLabNotify] start()");
     this.state = {
       percent: null,
       remaining: null,
