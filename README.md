@@ -26,6 +26,12 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
 
 ---
 
+## Screenshot
+
+![screenshot](screenshot.png)
+
+--- 
+
 ## 📦 Installation
 
 From your MagicMirror `modules` folder:
