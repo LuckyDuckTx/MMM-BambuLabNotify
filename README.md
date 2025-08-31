@@ -82,20 +82,20 @@ npm install
 | `idleTimeoutMs`     | Number  | `180000`     | Auto-reset to idle if no messages received for this duration (ms).                                    |
 | `doneQuietWindowMs` | Number  | `120000`     | Suppresses ghost finish/error events if printer hasn’t been recently active (helps after reconnects). |
 | `assumeIdleAfterMs` | Number  | `8000`       | Fallback: if nothing arrives after connect, assume Idle to clear “Connecting…” state.                 |
-| ** For Toasts Messages ** |
+| ** For Toasts Messages ** ||||
 | `toastDurationMs`   | Number  | `60000`      | How long toast notifications remain visible (milliseconds).                                           |
-| `toastStyle`        | String. | `modal`.     | Where the toast messages display. "modal" (center + overlay) or "corner" (top-right)                  |
-| `showOnStart`       | String. | `true`.      | Show Toast while connecting                                                                           |
-| `showOnDone`        | String. | `true`.      | Show Toast when print is finished                                                                     |
-| `showOnError`       | String. | `true`.      | Show Toast when an error or cancel occurs                                                             |
-| `showOnIdle`        | String. | `true`.      | Show Toast when printer becomes idle                                                                  |
+| `toastStyle`        | String  | `modal`      | Where the toast messages display. "modal" (center + overlay) or "corner" (top-right)                  |
+| `showOnStart`       | String  | `true`       | Show Toast while connecting                                                                           |
+| `showOnDone`        | String  | `true`       | Show Toast when print is finished                                                                     |
+| `showOnError`       | String  | `true`       | Show Toast when an error or cancel occurs                                                             |
+| `showOnIdle`        | String  | `true`       | Show Toast when printer becomes idle                                                                  |
 
 
 ## 🛠 Notes
 
 - Works locally on LAN only - MagicMirror and Printer must be on same LAN. 
 - Printer does not need to be in `LAN Only Mode`. 
-- Tested with Bambu Lab A1 Mini (2025 firmware).
+- Tested with Bambu Lab A1 (Aug 2025 firmware version 01.06.00.00).
 - All state changes and notifications are logged:
 
 ## License
