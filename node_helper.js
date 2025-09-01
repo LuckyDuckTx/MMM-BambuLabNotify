@@ -51,6 +51,8 @@ module.exports = NodeHelper.create({
     this.lastFile = "";
     this.lastPercent = null;
     this.lastEtaMins = null;
+    this.layerNum = null;
+    this.layerTotal = null;
     this.lastBucket = null;
     this.lastErrorText = "";
 
@@ -82,10 +84,8 @@ module.exports = NodeHelper.create({
       user: "bblp",
       password: "",
       serial: "",
-      printerName: "Bambu A1",
-
+      printerName: "BambuLab Printer",
       subscribeMode: "report",
-
       toastDurationMs: 60000,
       showOnStart: true,
       showOnDone: true,
@@ -147,7 +147,7 @@ module.exports = NodeHelper.create({
           // Assume Idle if nothing meaningful arrives shortly (idle printers are quiet)
           if (this._postConnectTimer) clearTimeout(this._postConnectTimer);
           this._postConnectTimer = setTimeout(() => {
-            if (this.connected && this.lastState === "connecting") {
+            if (this.config.logOnChange && this.connected && this.lastState === "connecting") {
               console.log("[MMM-BambuLabNotify] Assume-Idle fallback fired.");
               this._setIdleAndBroadcast(false);
             }
@@ -272,8 +272,25 @@ module.exports = NodeHelper.create({
         print.mc_remaining_time, print.remaining_time,
         msg.remaining_time, msg.time_remaining, msg.time_left
       );
-      const etaMins = isNum(etaMinsRaw) ? etaMinsRaw : Number(etaMinsRaw);
-      const etaStr = fmtMinutes(isNum(etaMins) ? etaMins : null);
+      let etaMins = etaMinsRaw || this.lastEtaMins;
+      if(state === "finish") etaMins = 0;
+
+      const etaStr = fmtMinutes(etaMins);
+
+      // Layer Counter
+      let layerStr = "";
+      const layer = pick(print.layer_num, msg.layer_num );
+      if (layer !== undefined ) {
+        this.layerNum = layer;
+      };
+      const total = pick(print.total_layer_num, msg.total_layer_num);
+      if (total !== undefined) {
+        this.layerTotal = total;
+      };
+
+      if (this.layerNum !== null && this.layerTotal !== null) {
+        layerStr = `${this.layerNum}/${this.layerTotal}`;
+      };
 
       // Infer state from event or percent if still unknown
       const event = lower(pick(msg.event, msg.type));
@@ -418,7 +435,7 @@ module.exports = NodeHelper.create({
       if (stateChanged && state === "paused") {
         this.lastAlertAt.pause = nowTs;
         if (this.config.showOnPause) {
-          // FIXME: The toast isn't working
+          // FIXME: The pause toast isn't working
           this._alertOnce("pause", `${Pname} Paused`,
             this.lastFile ? `${this.lastFile} paused.` : "Print paused.",
             8000, "info");
@@ -469,6 +486,7 @@ module.exports = NodeHelper.create({
       if (stateChanged || bucketChanged || etaChanged) {
         const payload = {
           remaining: etaStr || null,
+          layers: layerStr,
           file: this.lastFile || "",
           state: state || this.lastState || "running"
         };

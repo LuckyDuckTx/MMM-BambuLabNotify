@@ -7,10 +7,9 @@ Module.register("MMM-BambuLabNotify", {
     password: "",
     serial: "",
 
-    printerName: "Bambu A1",
+    printerName: "BambuLab Printer",
 
     displayProgress: true,
-    showRemaining: true,
     progressPrecision: 0,
     progressStep: 5,
     hideProgressWhenIdle: true,
@@ -34,6 +33,7 @@ Module.register("MMM-BambuLabNotify", {
     this.state = {
       percent: null,
       remaining: null,
+      layers: null,
       file: "",
       status: "connecting"
     };
@@ -60,6 +60,8 @@ Module.register("MMM-BambuLabNotify", {
       }
 
       if (p.remaining !== undefined) this.state.remaining = p.remaining || null;
+
+      if (p.layers !== undefined) this.state.layers = p.layers || null;
 
       if (typeof p.file === "string") {
         this.state.file = ["offline", "connecting"].includes(incomingState) ? "" : p.file;
@@ -116,8 +118,20 @@ Module.register("MMM-BambuLabNotify", {
 
         const meta = document.createElement("div");
         meta.className = "bambu-meta";
-        const etaText = (this.config.showRemaining && this.state.remaining) ? ` • ${this._esc(this.state.remaining)}` : "";
-        meta.innerText = `${pct}%`; // FIXME: remaining time isn't always showing `${pct}%${etaText}`;
+        meta.setAttribute("style", "display:flex; justify-content:space-between; width:100%;");
+
+        const leftSpan = document.createElement("span");
+        leftSpan.setAttribute("style", "text-align:left;");
+        leftSpan.innerText = this.state.layers ? `Layers: ${this.state.layers}` : "";
+
+        const rightSpan = document.createElement("span");
+        rightSpan.setAttribute("style", "text-align:right;");
+        const pctText = pct ? `${pct}% complete` : '';
+        const etaText = this.state.remaining ? ` • ${this._esc(this.state.remaining)} remaining` : "";
+        rightSpan.innerText = `${pctText}${etaText}`;
+
+        meta.appendChild(leftSpan);
+        meta.appendChild(rightSpan);
         wrap.appendChild(meta);
       } else if (status === "preparing" || status === "running") {
         const meta = document.createElement("div");
