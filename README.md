@@ -127,6 +127,6 @@ This project is licensed under the MIT License.
 ### Credits
 
 - Created using ChatGPT 5.0 (OpenAI)
-- Module inspired and tested by rwlongtx.
+- Module inspired and tested by LuckyDuckTx.
 ---
    
