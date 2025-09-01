@@ -53,7 +53,7 @@ From your MagicMirror `modules` folder:
 
 ```bash
 cd ~/MagicMirror/modules
-git clone https://github.com/rwlongtx/MMM-BambuLabNotify.git
+git clone https://github.com/LuckyDuckTx/MMM-BambuLabNotify.git
 cd MMM-BambuLabNotify
 npm install
 ```
