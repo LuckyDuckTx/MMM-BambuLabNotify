@@ -21,6 +21,7 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
 - 📊 Inline status panel:
   - Current state (Idle, Preparing, Printing, Paused, Canceled, Error, Finished)  
   - Job progress bar (%)  
+  - Layer countdown
   - Current file name   
 - 🖼 Clean, responsive display that fits MagicMirror layouts  
 
