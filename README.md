@@ -15,6 +15,7 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
 - 📡 Real-time printer status via MQTT over TLS  
 - 🔔 Toast notifications for:
   - Print started
+  - Print paused
   - Print canceled  
   - Print finished  
   - Error conditions  
@@ -23,7 +24,6 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
   - Job progress bar (%)  
   - Layer countdown
   - Current file name   
-- 🖼 Clean, responsive display that fits MagicMirror layouts  
 
 ---
 
@@ -50,21 +50,35 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
 
 ## 📦 Installation
 
-From your MagicMirror `modules` folder:
+To install in MagicMirror `modules` folder:
 
 ```bash
 cd ~/MagicMirror/modules
-git clone https://github.com/LuckyDuckTx/MMM-BambuLabNotify.git
+git clone https://gitlab.com/LuckyDuckTx/MMM-BambuLabNotify.git
 cd MMM-BambuLabNotify
 npm install
 ```
+
+---
+
+## 🛠️ Update
+
+Need to update your BambuLabNofity module? 
+
+```bash
+cd ~/MagicMirror/modules/MMM-BambuLabNotify
+git pull
+npm install
+```
+
+---
 
 ## ⚙️ Configuration
 **Add the Module to `config.js`**:
 - 🔑 **Getting your credentials**
   - **IP Address:** Found in your Bambu printer’s settings (Settings > Lan Only section).
   - **Access Code:** Found in your Bambu printer’s settings (Settings > Lan Only section).
-  - **Serial Number:** Printed on your printer label and in the Bambu Handy app (Settings > Firmware Version).
+  - **Serial Number:** Printed on your printer label and in Bambu Studio (under > Device > Update ), or in the Bambu Handy app (Settings > Firmware Version).
 
 - Edit your `MagicMirror/config/config.js` file and add the following configuration:
 
@@ -81,10 +95,13 @@ npm install
 
     // Toast Message options
     toastDurationMs: 60000, 
+    toastStyle: "Modal",
     showOnStart: true,
     showOnDone: true,
     showOnError: true,
+    showOnPause: true,
     showOnIdle: true, 
+    showOnCancel: true
   }
 }
 ```
@@ -92,24 +109,33 @@ npm install
 ## Configuration Options
 | Option              | Type    | Default      | Description                                                                                           |
 | ------------------- | ------- | ------------ | ----------------------------------------------------------------------------------------------------- |
-| `printerName`       | String  | `"Bambu A1"` | Name shown in the panel and toasts.                                                                   |
-| `port`              | Number  | `8883"`      | MQTT Port on printer                                                                                  |
+| `printerName`       | String  | `BambuLab Printer`| Name shown in the panel and toasts.                                                              |
+| `host`              | String  | `127.0.0.1`  | IP Address - Found in your Bambu printer’s settings (Settings > Lan Only section).                    |
+| `password`          | String  |              | Access Code - Found in your Bambu printer’s settings (Settings > Lan Only section).                   |
+| `serial`            | String  |              | Serial Number - Printed on your printer label and in the Bambu Handy app (Settings > Firmware Version). |
+| ** Toasts Messages ** ||||
+| `toastDurationMs`   | Number  | `60000`      | How long toast notifications remain visible (milliseconds).                                           |
+| `toastStyle`        | String  | `modal`      | Where the toast messages display. "modal" (center + overlay) or "corner" (top-right)                  |
+| `showOnStart`       | Boolean  | `true`       | Show Toast while connecting                                                                           |
+| `showOnDone`        | Boolean  | `true`       | Show Toast when print is finished                                                                     |
+| `showOnError`       | Boolean  | `true`       | Show Toast when an error or cancel occurs                                                             |
+| `showOnIdle`        | Boolean  | `true`       | Show Toast when printer becomes idle                                                                  |
+| `showOnPause`       | Boolean  | `true`       | Show Toast when printer is paused                                                                     |
+| `showOnCancel`      | Boolean  | `true`       | Show Toast when print is canceled                                                                     |
+| ** Advanced Settings  **   ||| You shouldn't need to change these unless you're debugging |
+| `port`              | Number  | `8883`       | MQTT Port on printer                                                                                  |
 | `user`              | String  | `bblp`       | MQTT user on printer                                                                                  |
 | `idleAfterCancelMs` | Number  | `60000`      | Time after cancel before panel resets to Idle (milliseconds).                                         |
 | `progressStep`      | Number  | `5`          | Bucket size for progress updates. Example: `5` → updates at 0%, 5%, 10% …                             |
 | `debounceMs`        | Number  | `15000`      | Minimum time between identical toast notifications (prevents spam).                                   |
 | `logRaw`            | Boolean | `false`      | If `true`, logs every raw MQTT message to console (very noisy).                                       |
-| `logOnChange`       | Boolean | `true`       | Logs only when state changes (recommended for debugging).                                             |
-| `idleTimeoutMs`     | Number  | `180000`     | Auto-reset to idle if no messages received for this duration (ms).                                    |
+| `logOnChange`       | Boolean | `false`      | Logs only when state changes (recommended for debugging).                                            |
+| `idleTimeoutMs`     | Number  | `120000`     | Auto-reset to idle if no messages received for this duration (ms).                                    |
 | `doneQuietWindowMs` | Number  | `120000`     | Suppresses ghost finish/error events if printer hasn’t been recently active (helps after reconnects). |
 | `assumeIdleAfterMs` | Number  | `8000`       | Fallback: if nothing arrives after connect, assume Idle to clear “Connecting…” state.                 |
-| ** Toasts Messages ** ||||
-| `toastDurationMs`   | Number  | `60000`      | How long toast notifications remain visible (milliseconds).                                           |
-| `toastStyle`        | String  | `modal`      | Where the toast messages display. "modal" (center + overlay) or "corner" (top-right)                  |
-| `showOnStart`       | String  | `true`       | Show Toast while connecting                                                                           |
-| `showOnDone`        | String  | `true`       | Show Toast when print is finished                                                                     |
-| `showOnError`       | String  | `true`       | Show Toast when an error or cancel occurs                                                             |
-| `showOnIdle`        | String  | `true`       | Show Toast when printer becomes idle                                                                  |
+
+---
+
 
 
 ## 🛠 Notes

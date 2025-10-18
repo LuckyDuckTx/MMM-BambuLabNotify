@@ -21,11 +21,12 @@ Module.register("MMM-BambuLabNotify", {
     showOnStart: true,
     showOnDone: true,
     showOnError: true,
-    showOnPause: false, // FIXME: Not working
+    showOnPause: true,
     showOnIdle: true,
+    showOnCancel: true,
 
     logRaw: false,
-    logOnChange: true
+    logOnChange: false
   },
 
   start() {

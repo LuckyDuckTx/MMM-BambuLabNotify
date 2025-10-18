@@ -1,4 +1,4 @@
-/* MMM-BambuLabNotify: node_helper.js 
+/* MMM-BambuLabNotify: node_helper.js
    - MQTT over TLS to Bambu LAN broker
    - Subscribes to device/<serial>/report only (most reliable)
    - Start/Done/Error/Cancel toasts
@@ -37,6 +37,15 @@ function looksIdlePrintObj(p) {
   return !hasProgress && !hasActiveStage;
 }
 
+function seqIsNewer(curr, last) {
+  if (!Number.isFinite(curr)) return false;
+  if (!Number.isFinite(last) || last < 0) return true;
+  const MOD = 65536;        
+  const HALF = MOD >>> 1; 
+  const diff = (curr - last + MOD) % MOD;
+  return diff > 0 && diff < HALF;
+}
+
 // ---------- module ----------
 module.exports = NodeHelper.create({
   start() {
@@ -58,6 +67,7 @@ module.exports = NodeHelper.create({
 
     this.lastActiveAt = 0;
     this.lastDoneAt = 0;
+    this.lastPausedAt = 0;
 
     // Per-stream sequence guards
     this.lastSeqStatus = -1;
@@ -67,10 +77,17 @@ module.exports = NodeHelper.create({
 
     // Cancel/idle guards
     this._postCancelTimer = null;
-    this._cancelEpoch = 0;  
+    this._cancelEpoch = 0;
     this._cancelGuardUntil = 0;
     this._idleTicker = setInterval(() => this._idleWatch(), 10_000);
     this._postConnectTimer = null;
+    this._lastPingReqAt = 0;
+    this._lastPingRespAt = 0;
+    this._lastReconnectAt = 0;
+    this._lastSubscribeAt = 0;
+
+    // After long idle, allow printer sequence_id to wrap/restart without dropping messages
+    this._seqResetAfterMs = Math.max(5 * 60 * 1000, Number(this.config.seqResetAfterMs) || 60 * 60 * 1000);
 
     console.log("[MMM-BambuLabNotify] node_helper started");
   },
@@ -90,18 +107,20 @@ module.exports = NodeHelper.create({
       showOnStart: true,
       showOnDone: true,
       showOnError: true,
-      showOnPause: false, // FIXME: Not working
+      showOnPause: true,
       showOnIdle: true,
+      showOnCancel: true,
 
       progressStep: 5,
       debounceMs: 15000,
       logRaw: false,
-      logOnChange: true,
+      logOnChange: false,
 
       idleTimeoutMs: 120000,         // 2 min
       doneQuietWindowMs: 120000,     // suppress stale done/error if not recently active
       assumeIdleAfterMs: 8000,       // fallback after subscribe -> Idle
-      idleAfterCancelMs: 60000,
+      seqResetAfterMs: 60 * 60 * 1000, // reset seq tracking if no msgs for this long
+      idleAfterCancelMs: 60000,      // when to auto-reset to idle after cancel
       cancelGuardMs: 60000           // suppress FAILED/error noise right after cancel
     }, cfg || {});
 
@@ -133,7 +152,7 @@ module.exports = NodeHelper.create({
     this.client.on("connect", (connack) => {
       this.connected = true;
       this.lastState = "connecting";
-      console.log("[MMM-BambuLabNotify] Connected:", connack);
+      console.log("[MMM-BambuLabNotify] Connected...");
 
       setTimeout(() => {
         this.client.subscribe([topicReport], { qos: 1 }, (err) => {
@@ -142,13 +161,14 @@ module.exports = NodeHelper.create({
             return;
           }
           console.log(`[MMM-BambuLabNotify] Subscribed to ${topicReport}`);
+          this._lastSubscribeAt = Date.now();
           this.sendSocketNotification("BN_PROGRESS", { state: "connecting", percent: null, file: "" });
 
           // Assume Idle if nothing meaningful arrives shortly (idle printers are quiet)
           if (this._postConnectTimer) clearTimeout(this._postConnectTimer);
           this._postConnectTimer = setTimeout(() => {
-            if (this.config.logOnChange && this.connected && this.lastState === "connecting") {
-              console.log("[MMM-BambuLabNotify] Assume-Idle fallback fired.");
+            if (this.connected && this.lastState === "connecting") {
+              if (this.config.logOnChange) console.log("[MMM-BambuLabNotify] Assume-Idle fallback fired.");
               this._setIdleAndBroadcast(false);
             }
           }, Math.max(3000, Number(this.config.assumeIdleAfterMs) || 6000));
@@ -168,6 +188,18 @@ module.exports = NodeHelper.create({
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });
 
+    // treat offline/disconnect explicitly too
+    this.client.on("offline", () => {
+      console.log("[MMM-BambuLabNotify] MQTT offline");
+      this.connected = false;
+      this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
+    });
+    this.client.on("disconnect", (packet) => {
+      console.log("[MMM-BambuLabNotify] MQTT disconnect", packet?.reasonCode);
+      this.connected = false;
+      this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
+    });
+
     this.client.on("error", (e) => {
       console.error("[MMM-BambuLabNotify] MQTT error:", e?.message || e);
       this.connected = false;
@@ -179,6 +211,14 @@ module.exports = NodeHelper.create({
       this.client.stream.on("close", () => console.log("[MMM-BambuLabNotify] stream closed"));
     }
 
+    // ping watchdog taps
+    this.client.on("packetsend", (packet) => {
+      if (packet?.cmd === "pingreq") this._lastPingReqAt = Date.now();
+    });
+    this.client.on("packetreceive", (packet) => {
+      if (packet?.cmd === "pingresp") this._lastPingRespAt = Date.now();
+    });
+
     // ---- message handler
     this.client.on("message", (topic, buf, packet) => {
       if (this._postConnectTimer) { clearTimeout(this._postConnectTimer); this._postConnectTimer = null; }
@@ -187,7 +227,11 @@ module.exports = NodeHelper.create({
       if (packet && packet.retain) return;
 
       const txt = buf.toString();
-      this.lastMsgAt = Date.now();
+      const nowTs = Date.now();
+      const prevMsgAt = this.lastMsgAt || 0;
+
+      this.lastMsgAt = nowTs;
+
       if (this.config.logRaw) console.log("[MMM-BambuLabNotify] RX:", topic, txt);
 
       let msg;
@@ -206,12 +250,24 @@ module.exports = NodeHelper.create({
       const isStatusTick = lower(print.command) === "push_status" || print.msg === 1 || msg.msg === 1;
       const isCommandAck = !isStatusTick && (command === "pause" || command === "resume" || command === "stop");
 
+      const longIdle = (nowTs - (prevMsgAt || 0)) > (this._seqResetAfterMs || 60 * 60 * 1000);
+
       if (Number.isFinite(seq)) {
         if (isStatusTick) {
-          if (seq <= this.lastSeqStatus) return; 
+          if (!seqIsNewer(seq, this.lastSeqStatus)) {
+            if (this.config.logOnChange) {
+              console.log("[MMM-BambuLabNotify] Dropping out-of-order status seq (wrap-aware):", seq, "<=~", this.lastSeqStatus);
+            }
+            return;
+          }
           this.lastSeqStatus = seq;
         } else if (isCommandAck) {
-          if (seq <= this.lastSeqCmd) return;
+          if (!seqIsNewer(seq, this.lastSeqCmd)) {
+            if (this.config.logOnChange) {
+              console.log("[MMM-BambuLabNotify] Dropping out-of-order cmd seq (wrap-aware):", seq, "<=~", this.lastSeqCmd);
+            }
+            return;
+          }
           this.lastSeqCmd = seq;
         }
       }
@@ -230,6 +286,7 @@ module.exports = NodeHelper.create({
         this._cancelGuardUntil = 0;
       }
 
+      // Quick state from control acks
       let stateFromAck = "";
       if (command === "pause") stateFromAck = "paused";
       if (command === "resume") stateFromAck = "running";
@@ -253,10 +310,6 @@ module.exports = NodeHelper.create({
         state = "canceled";
       }
 
-      // Hard pause markers from A1
-      const pausedStrict =
-        gcs === "pause" || gcs === "paused" || String(print.mc_print_stage) === "3";
-
       // Prefer control-ack state if present
       if (stateFromAck) state = stateFromAck;
 
@@ -272,25 +325,19 @@ module.exports = NodeHelper.create({
         print.mc_remaining_time, print.remaining_time,
         msg.remaining_time, msg.time_remaining, msg.time_left
       );
-      let etaMins = etaMinsRaw || this.lastEtaMins;
-      if(state === "finish") etaMins = 0;
-
+      let etaMins = isNum(etaMinsRaw) ? etaMinsRaw : (this.lastEtaMins ?? null);
+      if (state === "finish") etaMins = 0;
       const etaStr = fmtMinutes(etaMins);
 
       // Layer Counter
       let layerStr = "";
-      const layer = pick(print.layer_num, msg.layer_num );
-      if (layer !== undefined ) {
-        this.layerNum = layer;
-      };
+      const layer = pick(print.layer_num, msg.layer_num);
+      if (layer !== undefined) this.layerNum = layer;
       const total = pick(print.total_layer_num, msg.total_layer_num);
-      if (total !== undefined) {
-        this.layerTotal = total;
-      };
-
+      if (total !== undefined) this.layerTotal = total;
       if (this.layerNum !== null && this.layerTotal !== null) {
         layerStr = `${this.layerNum}/${this.layerTotal}`;
-      };
+      }
 
       // Infer state from event or percent if still unknown
       const event = lower(pick(msg.event, msg.type));
@@ -312,59 +359,77 @@ module.exports = NodeHelper.create({
       }
 
       // ----- Sticky Pause logic -----
-      // If explicit pause markers are present, force paused.
-      if (pausedStrict) {
+      const terminalNow =
+        stateFromAck === "canceled" ||
+        state === "canceled" ||
+        state === "finish" ||
+        state === "error" ||
+        gcs === "finish" ||
+        gcs === "failed" ||
+        gcs === "idle";
+
+      const pausedStrict =
+        gcs === "pause" || gcs === "paused" || String(print.mc_print_stage) === "3";
+
+      if (pausedStrict && !terminalNow) {
         state = "paused";
-      } else {
-        // Only allow leaving "paused" on explicit signals (ack or gcode_state: running).
-        if (this.lastState === "paused") {
-          const explicitResume = (stateFromAck === "running") || (gcs === "running");
-          if (!explicitResume) {
-            // Do NOT infer resume from percent/layer ticks.
-            state = "paused";
-          }
+      } else if (this.lastState === "paused") {
+        const explicitResume = (stateFromAck === "running") || (gcs === "running");
+        const explicitTerminal = terminalNow;
+        if (!explicitResume && !explicitTerminal) {
+          state = "paused";
         }
       }
 
-      // Connecting but only seeing idle-ish payloads? Flip to idle so panel leaves “Connecting…”
+      // Connecting but only seeing idle-ish payloads? Flip to idle.
       if ((!state || state === "connecting") && this.lastState === "connecting" && looksIdlePrintObj(print)) {
         state = "idle";
       }
 
-      // --- Cancel guard: suppress FAILED/error right after user cancel
-      const nowTs = Date.now();
+      // Cancel guard: suppress FAILED/error right after user cancel
       if (this._cancelGuardUntil && nowTs < this._cancelGuardUntil) {
         if (state === "error" || gcs === "failed") {
-          state = "canceled"; // stay canceled during guard window
+          state = "canceled";
+        }
+      }
+
+      // Suppress idle→error noise
+      if (this.lastState === "idle" && state === "error") {
+        const idleish = looksIdlePrintObj(print) && !isNum(percent);
+        const noStartHint = !(isProjectFile || aboutToStart);
+        if (idleish && noStartHint) {
+          if (this.config.logOnChange) console.log("[MMM-BambuLabNotify] Suppressed idle→error noise.");
+          return;
         }
       }
 
       const stateChanged = !!state && state !== this.lastState;
       if (stateChanged) this.lastStateAt = nowTs;
 
-      // ---- Real activity tracking
+      // Real activity tracking
       const isActivelyPrintingTick =
         (state === "running" || this.lastState === "running") &&
         (isNum(percent) || print.layer_num !== undefined || print.mc_print_sub_stage !== undefined);
       const isActiveState = state === "preparing" || state === "running" || state === "paused";
       if (isActiveState || isActivelyPrintingTick) {
-        this.lastActiveAt = nowTs;  // refresh on every meaningful tick while active
+        this.lastActiveAt = nowTs;
       }
 
-      // ---- Cancel flow
-      if (stateChanged && state === "canceled") {
-        // Show cancel immediately
-        this._alertOnce("cancel",
-          `${this.config.printerName || "Printer"} Print Canceled`,
-          this.lastFile ? `${this.lastFile} was canceled.` : "Print job canceled.",
-          8000,
-          "error"
-        );
+      // Cancel flow
+      if (stateChanged && state === "canceled") { 
+        if (this.config.showOnCancel) {
+          this._alertOnce(
+            "cancel",
+            `${this.config.printerName || "Printer"} Print Canceled`,
+            this.lastFile ? `${this.lastFile} was canceled.` : "Print job canceled.",
+            8000,
+            "error"
+          );
+        }
+        const baseGuard = Math.max(30_000, Number(this.config.cancelGuardMs) || 60_000);
+        const idleDelay = Math.max(30_000, Number(this.config.idleAfterCancelMs) || 120_000);
+        this._cancelGuardUntil = nowTs + Math.max(baseGuard, idleDelay + 15_000);
 
-        // Guard against immediate FAILED/error chatter
-        this._cancelGuardUntil = nowTs + Math.max(5000, Number(this.config.cancelGuardMs) || 20000);
-
-        // Schedule return-to-idle
         const myEpoch = ++this._cancelEpoch;
         if (this._postCancelTimer) clearTimeout(this._postCancelTimer);
         this._postCancelTimer = setTimeout(() => {
@@ -376,30 +441,28 @@ module.exports = NodeHelper.create({
         }, Math.max(30_000, Number(this.config.idleAfterCancelMs) || 120_000));
       }
 
-      // If we transitioned *away* from canceled, kill any pending cancel timer
-      if (stateChanged && state !== "canceled" && this._postCancelTimer) {
+      if (stateChanged && state !== "canceled" && state !== "error" && this._postCancelTimer) {
         clearTimeout(this._postCancelTimer);
         this._postCancelTimer = null;
         this._cancelGuardUntil = 0;
       }
 
-      // Activity window (uses frequently refreshed lastActiveAt)
+      // Activity window for de-ghosting finish/error
       const recentlyActive = (Date.now() - (this.lastActiveAt || 0)) <= (this.config.doneQuietWindowMs || 120000);
 
       if (this.config.logOnChange && stateChanged) {
         console.log("[MMM-BambuLabNotify] State change:", this.lastState, "→", state);
       }
 
-      // Suppress stale finish/error after *long* idle (reconnect noise)
       if ((state === "finish" || state === "error") && !recentlyActive) {
         return;
       }
 
-      // --- Toast gating (start/resume) ---
+      // Toast gating (start/resume)
       const wasPaused = (this.lastState === "paused");
       const explicitResumeNow = (stateFromAck === "running") || (gcs === "running");
       const isResume = explicitResumeNow && wasPaused;
-      const justPaused = nowTs - (this.lastAlertAt.pause || 0) < 4000;
+      const justPaused = nowTs - (this.lastPausedAt || 0) < 4000;
 
       const canStartToast =
         stateChanged &&
@@ -408,7 +471,6 @@ module.exports = NodeHelper.create({
         !pausedStrict &&
         !justPaused;
 
-      // Toasts
       const Pname = this.config.printerName || "Printer";
 
       if (this.config.showOnStart && canStartToast) {
@@ -417,7 +479,6 @@ module.exports = NodeHelper.create({
           this.config.toastDurationMs, "start");
       }
 
-      // Done / finish
       const reached100 = isNum(percent) && percent >= 100;
       const isFinishState = state === "finish";
       if (this.config.showOnDone && recentlyActive && (isFinishState || (this.lastState === "running" && reached100))) {
@@ -431,18 +492,21 @@ module.exports = NodeHelper.create({
         this.lastDoneAt = Date.now();
       }
 
-      // Mark explicit pause toast (optional, only gating future start toast)
       if (stateChanged && state === "paused") {
-        this.lastAlertAt.pause = nowTs;
         if (this.config.showOnPause) {
-          // FIXME: The pause toast isn't working
-          this._alertOnce("pause", `${Pname} Paused`,
+          this._alertOnce(
+            "pause",
+            `${Pname} Paused`,
             this.lastFile ? `${this.lastFile} paused.` : "Print paused.",
-            8000, "info");
+            this.config.toastDurationMs,
+            "info"
+          );
+          this.lastPausedAt = nowTs;  
+        } else {
+          this.lastPausedAt = nowTs; 
         }
       }
 
-      // Error toasts (skip if in cancel guard window)
       const inCancelGuard = this._cancelGuardUntil && Date.now() < this._cancelGuardUntil;
       const errText = cleanErrorText(
         msg.error, msg.message, msg.err,
@@ -468,7 +532,6 @@ module.exports = NodeHelper.create({
       if (stateChanged && state === "idle") {
         this._setIdleAndBroadcast(true);
         this.lastSeqStatus = -1; // allow fresh status ticks after idle
-        // reset cancel epoch; we are definitely out of any cancel flow
         this._cancelEpoch += 1;
         this._cancelGuardUntil = 0;
         return;
@@ -509,8 +572,10 @@ module.exports = NodeHelper.create({
 
   _idleWatch() {
     const now = Date.now();
-    const idleTimeout = Math.max(60_000, Number(this.config.idleTimeoutMs) || 180_000);
     if (!this.connected) return;
+
+    // ---- "go idle after quiet" logic ----
+    const idleTimeout = Math.max(60_000, Number(this.config.idleTimeoutMs) || 180_000);
 
     if (this.lastState && this.lastState !== "idle" && this.lastMsgAt > 0 && now - this.lastMsgAt > idleTimeout) {
       this._setIdleAndBroadcast(true);
@@ -526,6 +591,66 @@ module.exports = NodeHelper.create({
       this._cancelGuardUntil = 0;
       return;
     }
+
+    // ---- STALE STREAM / WATCHDOG ----
+    const quiet = this.lastMsgAt ? (now - this.lastMsgAt) : Infinity;
+    const ACTIVE = new Set(["preparing", "running", "paused"]);
+    const isActive = ACTIVE.has(this.lastState);
+
+    const staleIdleMs   = 6 * 60 * 60 * 1000;  // 6h silence when NOT active
+    const staleActiveMs = 45 * 60 * 1000;      // 45m total silence while active
+    const noActivityMs  = 45 * 60 * 1000;      // 45m since lastActiveAt (real progress)
+
+    // Ping watchdog: if we sent a ping but never saw a response for >2m, assume dead
+    const pingRespTimeoutMs = 2 * 60 * 1000;
+    const sentPingAgo = this._lastPingReqAt ? (now - this._lastPingReqAt) : Infinity;
+    const respIsOld   = this._lastPingRespAt < this._lastPingReqAt;
+    const pingLooksDead = sentPingAgo > pingRespTimeoutMs && respIsOld;
+
+    // Nightly resubscribe (24h) when quiet, to refresh broker subs without tear-down
+    const needsNightlyResub = (now - (this._lastSubscribeAt || 0)) > (24 * 60 * 60 * 1000);
+
+    // Cooldown between reconnect attempts
+    const reconnectCooldownMs = 30 * 60 * 1000; // 30m
+    this._lastReconnectAt = this._lastReconnectAt || 0;
+    const dueCooldown = (now - this._lastReconnectAt) > reconnectCooldownMs;
+
+    let shouldReconnect = false;
+
+    if (pingLooksDead) {
+      shouldReconnect = true;
+    } else if (!isActive && quiet > staleIdleMs) {
+      shouldReconnect = true;
+    } else if (isActive && quiet > staleActiveMs && (now - (this.lastActiveAt || 0)) > noActivityMs) {
+      shouldReconnect = true;
+    } else if (needsNightlyResub && quiet > 5 * 60 * 1000) {
+      try {
+        const topicReport = `device/${this.config.serial}/report`;
+        this.client.subscribe([topicReport], { qos: 1 }, (err) => {
+          if (!err) this._lastSubscribeAt = Date.now();
+        });
+      } catch {}
+    }
+
+    if (this.connected && dueCooldown && shouldReconnect) {
+      console.log("[MMM-BambuLabNotify] MQTT stream stale; soft-reconnecting...");
+      this._lastReconnectAt = now;
+
+      // First try a gentle reconnect on the same client
+      try { if (this.client) this.client.reconnect(); } catch {}
+
+      // If that doesn't quickly restore traffic, rebuild the connection
+      setTimeout(() => {
+        const stillQuiet = (Date.now() - (this.lastMsgAt || 0)) > 2 * 60 * 1000; // 2m
+        const stillNoPing = (Date.now() - (this._lastPingRespAt || 0)) > 2 * 60 * 1000 && this._lastPingRespAt < (this._lastPingReqAt || 0);
+        if (!this.connected || stillQuiet || stillNoPing) {
+          try { if (this.client) this.client.end(true); } catch {}
+          this.client = null;
+          // Reuse the existing config (re-subscribes to topics)
+          this.socketNotificationReceived("BN_CONNECT", this.config);
+        }
+      }, 5000);
+    }
   },
 
   _setIdleAndBroadcast(showToast = false) {
@@ -536,12 +661,15 @@ module.exports = NodeHelper.create({
     this.lastEtaMins = null;
     this.lastBucket = null;
     this.lastFile = "";
+    this.layerNum = null;
+    this.layerTotal = null;
+    this.lastActiveAt = 0;
 
     if (showToast && this.config.showOnIdle) {
       this._alertOnce("idle", `${P} Idle`, "Ready for next job.", 6000, "connected");
     }
     this.sendSocketNotification("BN_PROGRESS", {
-      percent: null, remaining: null, file: "", state: "idle"
+      percent: null, remaining: null, file: "", state: "idle", layers: ""
     });
   },
 
