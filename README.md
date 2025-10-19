@@ -103,7 +103,7 @@ npm install
     showOnIdle: true, 
     showOnCancel: true
   }
-}
+},
 ```
 
 ## Configuration Options
