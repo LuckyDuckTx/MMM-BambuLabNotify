@@ -11,5 +11,10 @@
     "Bambulab"
   ],
   "homepage": "https://github.com/LuckyDuckTx/MMM-BambuLabNotify",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LuckyDuckTx/MMM-BambuLabNotify"
+  },
+  "license": "MIT",
   "dependencies": { "mqtt": "^5.10.0" }
 }
