@@ -13,6 +13,8 @@ Module.register("MMM-BambuLabNotify", {
     progressPrecision: 0,
     progressStep: 5,
     hideProgressWhenIdle: true,
+    hideWhileOff: false,
+    hideWhileIdle: false,
 
     toastStyle: "modal",   // "modal" | "corner"
     toastDurationMs: 60000,
@@ -78,13 +80,19 @@ Module.register("MMM-BambuLabNotify", {
     const wrap = document.createElement("div");
     wrap.className = "bambu-wrap small light";
 
+    const status = (this.state.status || "connecting").toLowerCase();
+
+    if ((this.config.hideWhileOff && ["offline","connecting"].includes(status)) || (this.config.hideWhileIdle && status === "idle")) {
+      wrap.style.display = "none";
+      return wrap;
+    }
+
     if (!this.config.displayProgress) {
       wrap.innerText = this.config.printerName || "Bambu Printer";
       return wrap;
     }
 
     const name = this.config.printerName || "Printer";
-    const status = (this.state.status || "connecting").toLowerCase();
     const statusLabel = this._statusNice(status);
     const statusColor = this._statusColor(status);
     const fileLabel = (this.state.file && !["offline","connecting"].includes(status))
@@ -201,7 +209,7 @@ Module.register("MMM-BambuLabNotify", {
       paused: "#f59e0b",      // amber
       finish: "#3b82f6",      // blue
       idle: "#94a3b8",        // slate
-      offline: "#ef4444",     // red
+      offline: "#999999",     // gray
       connecting: "#f59e0b",  // amber
       error: "#ef4444"
     }[s] || "#94a3b8");

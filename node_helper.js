@@ -177,31 +177,32 @@ module.exports = NodeHelper.create({
     });
 
     this.client.on("reconnect", () => {
-      console.log("[MMM-BambuLabNotify] Reconnecting...");
+      if (this.config.logRaw) console.log("[MMM-BambuLabNotify] Reconnecting...");
       this.connected = false;
-      this.sendSocketNotification("BN_PROGRESS", { state: "connecting", percent: null, file: "" });
+      // removed to prevent continuous connecting notification when printer is off
+      // this.sendSocketNotification("BN_PROGRESS", { state: "connecting", percent: null, file: "" });
     });
 
     this.client.on("close", () => {
-      console.log("[MMM-BambuLabNotify] Connection closed");
+      if (this.config.logRaw) console.log("[MMM-BambuLabNotify] Connection closed");
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });
 
     // treat offline/disconnect explicitly too
     this.client.on("offline", () => {
-      console.log("[MMM-BambuLabNotify] MQTT offline");
+      if (this.config.logRaw) console.log("[MMM-BambuLabNotify] MQTT offline");
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });
     this.client.on("disconnect", (packet) => {
-      console.log("[MMM-BambuLabNotify] MQTT disconnect", packet?.reasonCode);
+      if (this.config.logRaw) console.log("[MMM-BambuLabNotify] MQTT disconnect", packet?.reasonCode);
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });
 
     this.client.on("error", (e) => {
-      console.error("[MMM-BambuLabNotify] MQTT error:", e?.message || e);
+      if (this.config.logRaw) console.error("[MMM-BambuLabNotify] MQTT error:", e?.message || e);
       this.connected = false;
       this.sendSocketNotification("BN_PROGRESS", { state: "offline", percent: null, file: "" });
     });

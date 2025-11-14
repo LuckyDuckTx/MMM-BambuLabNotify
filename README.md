@@ -101,9 +101,11 @@ npm install
     showOnError: true,
     showOnPause: true,
     showOnIdle: true, 
-    showOnCancel: true
+    showOnCancel: true,
+    hideWhileOff: false,
+    hideWhileIdle: false
   }
-},
+}
 ```
 
 ## Configuration Options
@@ -122,6 +124,8 @@ npm install
 | `showOnIdle`        | Boolean  | `true`       | Show Toast when printer becomes idle                                                                  |
 | `showOnPause`       | Boolean  | `true`       | Show Toast when printer is paused                                                                     |
 | `showOnCancel`      | Boolean  | `true`       | Show Toast when print is canceled                                                                     |
+| `hideWhileOff`      | Boolean   | `false`      | Hide status when the printer is offline |
+| `hideWhileIdle`      | Boolean   | `false`      | Hide status when the printer is idle |
 | ** Advanced Settings  **   ||| You shouldn't need to change these unless you're debugging |
 | `port`              | Number  | `8883`       | MQTT Port on printer                                                                                  |
 | `user`              | String  | `bblp`       | MQTT user on printer                                                                                  |
