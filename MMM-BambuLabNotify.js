@@ -1,4 +1,34 @@
 /* MMM-BambuLabNotify.js */
+const BN_DEFAULT_TEXT = {
+  fallbackPrinterName: "Bambu Printer",
+  status: {
+    running: "Printing",
+    preparing: "Preparing",
+    paused: "Paused",
+    finish: "Finished",
+    idle: "Idle",
+    canceled: "Canceled",
+    error: "Error",
+    offline: "Offline",
+    connecting: "Connecting..."
+  },
+  panel: {
+    layers: "Layers:",
+    complete: "complete",
+    remaining: "remaining",
+    preparing: "Preparing...",
+    printing: "Printing...",
+    nozzle: "Nozzle:",
+    bed: "Bed:",
+    empty: "Empty",
+    job: "Job:",
+    tray: "Tray"
+  },
+  toast: {
+    notification: "Notification"
+  }
+};
+
 Module.register("MMM-BambuLabNotify", {
   defaults: {
     host: "192.168.86.100",
@@ -10,6 +40,9 @@ Module.register("MMM-BambuLabNotify", {
     printerName: "BambuLab Printer",
 
     displayProgress: true,
+    displayTemperatures: true,
+    displayAms: true,
+    temperatureUnit: "C",
     progressPrecision: 0,
     progressStep: 5,
     hideProgressWhenIdle: true,
@@ -28,15 +61,20 @@ Module.register("MMM-BambuLabNotify", {
     showOnCancel: true,
 
     logRaw: false,
-    logOnChange: false
+    logOnChange: false,
+
+    text: BN_DEFAULT_TEXT
   },
 
   start() {
     Log.info("[MMM-BambuLabNotify] start()");
+    this.text = this._mergeText(BN_DEFAULT_TEXT, this.config.text);
     this.state = {
       percent: null,
       remaining: null,
       layers: null,
+      temperatures: null,
+      filaments: [],
       file: "",
       status: "connecting"
     };
@@ -65,6 +103,8 @@ Module.register("MMM-BambuLabNotify", {
       if (p.remaining !== undefined) this.state.remaining = p.remaining || null;
 
       if (p.layers !== undefined) this.state.layers = p.layers || null;
+      if (p.temperatures && this._hasTemperatures(p.temperatures)) this.state.temperatures = p.temperatures;
+      if (p.filaments !== undefined) this.state.filaments = Array.isArray(p.filaments) ? p.filaments : [];
 
       if (typeof p.file === "string") {
         this.state.file = ["offline", "connecting"].includes(incomingState) ? "" : p.file;
@@ -88,25 +128,30 @@ Module.register("MMM-BambuLabNotify", {
     }
 
     if (!this.config.displayProgress) {
-      wrap.innerText = this.config.printerName || "Bambu Printer";
+      wrap.innerText = this.config.printerName || this._text("fallbackPrinterName");
       return wrap;
     }
 
-    const name = this.config.printerName || "Printer";
+    const name = this.config.printerName || this._text("fallbackPrinterName");
     const statusLabel = this._statusNice(status);
     const statusColor = this._statusColor(status);
-    const fileLabel = (this.state.file && !["offline","connecting"].includes(status))
-      ? ` • ${this._shorten(this.state.file, 28)}`
-      : "";
 
     const label = document.createElement("div");
     label.className = "bambu-label";
     label.innerHTML = `
-      <span class="bambu-name">${this._esc(name)}</span>
-      <span class="bambu-pill" style="border-color:${statusColor};color:${statusColor}">${this._esc(statusLabel)}</span>
-      ${fileLabel ? `<span class="bambu-file">${this._esc(fileLabel)}</span>` : ""}
+      <div class="bambu-title-row">
+        <span class="bambu-name">${this._esc(name)}</span>
+        <span class="bambu-pill" style="border-color:${statusColor};color:${statusColor}">${this._esc(statusLabel)}</span>
+      </div>
     `;
     wrap.appendChild(label);
+
+    if (this.state.file && !["offline","connecting","idle"].includes(status)) {
+      const file = document.createElement("div");
+      file.className = "bambu-file";
+      file.innerText = `${this._text("panel.job")} ${this._shorten(this.state.file, 52)}`;
+      wrap.appendChild(file);
+    }
 
     const hideForStatus = ["offline","connecting"].includes(status);
     const isIdle = (status === "idle");
@@ -131,12 +176,12 @@ Module.register("MMM-BambuLabNotify", {
 
         const leftSpan = document.createElement("span");
         leftSpan.setAttribute("style", "text-align:left;");
-        leftSpan.innerText = this.state.layers ? `Layers: ${this.state.layers}` : "";
+        leftSpan.innerText = this.state.layers ? `${this._text("panel.layers")} ${this.state.layers}` : "";
 
         const rightSpan = document.createElement("span");
         rightSpan.setAttribute("style", "text-align:right;");
-        const pctText = pct ? `${pct}% complete` : '';
-        const etaText = this.state.remaining ? ` • ${this._esc(this.state.remaining)} remaining` : "";
+        const pctText = pct ? `${pct}% ${this._text("panel.complete")}` : "";
+        const etaText = this.state.remaining ? ` • ${this._esc(this.state.remaining)} ${this._text("panel.remaining")}` : "";
         rightSpan.innerText = `${pctText}${etaText}`;
 
         meta.appendChild(leftSpan);
@@ -146,25 +191,79 @@ Module.register("MMM-BambuLabNotify", {
         const meta = document.createElement("div");
         meta.className = "bambu-meta";
         meta.style.opacity = ".8";
-        meta.innerText = (status === "preparing") ? "Preparing…" : "Printing…";
+        meta.innerText = (status === "preparing") ? this._text("panel.preparing") : this._text("panel.printing");
         wrap.appendChild(meta);
       }
+    }
+
+    if (!hideForStatus) {
+      const detailRows = [];
+
+      if (this.config.displayTemperatures && this.state.temperatures) {
+        const tempText = this._formatTemperatures(this.state.temperatures, !isIdle);
+        if (tempText) detailRows.push(tempText);
+      }
+
+      if (this.config.displayAms && this.state.filaments && this.state.filaments.length) {
+        detailRows.push(this._renderFilaments(this.state.filaments, !isIdle));
+      }
+
+      detailRows.forEach((row) => wrap.appendChild(row));
     }
 
     const style = document.createElement("style");
     style.textContent = `
       .bambu-wrap { min-width:220px; max-width:340px; }
-      .bambu-label { opacity:.95; margin-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-      .bambu-name { font-weight:600; }
-      .bambu-file { opacity:.85; }
+      .bambu-label { opacity:.95; margin-bottom:4px; }
+      .bambu-title-row {
+        display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:center; gap:10px;
+        width:100%;
+      }
+      .bambu-name {
+        color:#fff; font-size:110%; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        justify-self:start; text-align:left;
+      }
+      .bambu-file {
+        display:block; width:100%; max-width:100%; opacity:.85; margin-bottom:10px;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left;
+      }
       .bambu-pill {
         display:inline-flex; align-items:center; gap:6px;
         padding:1px 8px; border-radius:999px; border:2px solid currentColor;
-        font-weight:700; font-size:90%;
+        font-weight:700; font-size:90%; justify-self:end;
       }
       .bambu-bar { position:relative; height:6px; border-radius:999px; background:rgba(255,255,255,.18); overflow:hidden; }
       .bambu-fill { position:absolute; inset:0 auto 0 0; width:0%; background:rgba(255,255,255,.75); }
       .bambu-meta { margin-top:6px; opacity:.9; }
+      .bambu-detail { margin-top:7px; opacity:.9; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .bambu-temp.bambu-detail { margin-top:12px; }
+      .bambu-temp { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
+      .bambu-temp-item {
+        display:flex; align-items:center; gap:5px; min-width:0;
+        padding:1px 6px; border-radius:999px; border:1px solid rgba(255,255,255,.18);
+        background:rgba(255,255,255,.06); line-height:1.35;
+      }
+      .bambu-temp-label { opacity:.72; font-weight:700; flex:0 0 auto; }
+      .bambu-temp-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .bambu-filaments { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
+      .bambu-filament {
+        display:flex; align-items:center; gap:5px; min-width:0;
+        padding:1px 6px; border-radius:999px; border:1px solid rgba(255,255,255,.28);
+        background:rgba(255,255,255,.08); line-height:1.35;
+      }
+      .bambu-filament-active { border-color:rgba(255,255,255,.75); background:rgba(255,255,255,.16); }
+      .bambu-filament-empty { opacity:.58; border-style:dashed; }
+      .bambu-swatch {
+        width:10px; height:10px; flex:0 0 10px; border-radius:50%;
+        border:1px solid rgba(255,255,255,.75); box-shadow:0 0 0 1px rgba(0,0,0,.25);
+      }
+      .bambu-filament-active .bambu-swatch { animation:bambu-pulse 2.4s ease-in-out infinite; }
+      .bambu-slot { opacity:.72; font-weight:700; flex:0 0 auto; }
+      .bambu-filament-label { max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      @keyframes bambu-pulse {
+        0%, 100% { transform:scale(1); box-shadow:0 0 0 1px rgba(0,0,0,.25), 0 0 0 0 rgba(255,255,255,.42); }
+        50% { transform:scale(1.22); box-shadow:0 0 0 1px rgba(0,0,0,.25), 0 0 0 5px rgba(255,255,255,0); }
+      }
     `;
     wrap.appendChild(style);
 
@@ -189,17 +288,125 @@ Module.register("MMM-BambuLabNotify", {
     return String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   },
 
-  _statusNice(s) {
-    switch (s) {
-      case "running": return "Printing";
-      case "preparing": return "Preparing";
-      case "paused": return "Paused";
-      case "finish": return "Finished";
-      case "idle": return "Idle";
-      case "offline": return "Offline";
-      case "connecting": return "Connecting…";
-      default: return s.charAt(0).toUpperCase() + s.slice(1);
+  _formatTemperatures(temps, showTargets = true) {
+    const row = document.createElement("div");
+    row.className = "bambu-detail bambu-temp";
+
+    [
+      [this._text("panel.nozzle"), this._formatTempPair(temps.nozzle, temps.nozzleTarget, showTargets)],
+      [this._text("panel.bed"), this._formatTempPair(temps.bed, temps.bedTarget, showTargets)]
+    ].forEach(([label, value]) => {
+      if (!value) return;
+
+      const item = document.createElement("span");
+      item.className = "bambu-temp-item";
+
+      const labelEl = document.createElement("span");
+      labelEl.className = "bambu-temp-label";
+      labelEl.innerText = label;
+      item.appendChild(labelEl);
+
+      const valueEl = document.createElement("span");
+      valueEl.className = "bambu-temp-value";
+      valueEl.innerText = value;
+      item.appendChild(valueEl);
+
+      row.appendChild(item);
+    });
+
+    if (!row.children.length) return null;
+    return row;
+  },
+
+  _hasTemperatures(temps) {
+    return !!temps && ["nozzle", "nozzleTarget", "bed", "bedTarget"].some((key) => (
+      typeof temps[key] === "number" && isFinite(temps[key])
+    ));
+  },
+
+  _formatTempPair(current, target, showTarget = true) {
+    const currentText = this._formatTemp(current);
+    const targetText = showTarget && target > 0 ? this._formatTemp(target) : "";
+    if (currentText && targetText) return `${currentText}/${targetText}`;
+    return currentText || targetText || "";
+  },
+
+  _formatTemp(value) {
+    if (typeof value !== "number" || !isFinite(value)) return "";
+    const unit = String(this.config.temperatureUnit || "C").toUpperCase();
+    if (unit === "F" || unit === "FAHRENHEIT") {
+      return `${Math.round((value * 9 / 5) + 32)}°F`;
     }
+    return `${Math.round(value)}°C`;
+  },
+
+  _renderFilaments(filaments, pulseActive = true) {
+    const row = document.createElement("div");
+    row.className = "bambu-detail bambu-filaments";
+
+    filaments.forEach((filament) => {
+      const chip = document.createElement("span");
+      chip.className = [
+        "bambu-filament",
+        filament.active && pulseActive ? "bambu-filament-active" : "",
+        filament.empty ? "bambu-filament-empty" : ""
+      ].filter(Boolean).join(" ");
+
+      const swatch = document.createElement("span");
+      swatch.className = "bambu-swatch";
+      swatch.style.background = filament.empty ? "transparent" : (this._cssColor(filament.color) || "transparent");
+      chip.appendChild(swatch);
+
+      const slot = document.createElement("span");
+      slot.className = "bambu-slot";
+      slot.innerText = filament.slot ? `${filament.slot}:` : "";
+      chip.appendChild(slot);
+
+      const label = document.createElement("span");
+      label.className = "bambu-filament-label";
+      label.innerText = filament.empty ? this._text("panel.empty") : (filament.type || filament.name || `${this._text("panel.tray")} ${filament.slot || "?"}`);
+      chip.appendChild(label);
+
+      row.appendChild(chip);
+    });
+
+    return row;
+  },
+
+  _cssColor(color) {
+    if (!color) return "";
+    const s = String(color).trim();
+    if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s)) return s.slice(0, 7);
+    if (/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s)) return `#${s.slice(0, 6)}`;
+    return "";
+  },
+
+  _mergeText(defaults, custom) {
+    const merged = {};
+    const source = custom && typeof custom === "object" ? custom : {};
+    Object.keys(defaults).forEach((key) => {
+      if (defaults[key] && typeof defaults[key] === "object" && !Array.isArray(defaults[key])) {
+        merged[key] = Object.assign({}, defaults[key], source[key] || {});
+      } else {
+        merged[key] = source[key] !== undefined ? source[key] : defaults[key];
+      }
+    });
+    return merged;
+  },
+
+  _text(path) {
+    const parts = path.split(".");
+    let value = this.text || BN_DEFAULT_TEXT;
+    for (const part of parts) {
+      value = value && value[part];
+    }
+    return value !== undefined && value !== null && value !== "" ? String(value) : String(path);
+  },
+
+  _statusNice(s) {
+    return this._text(`status.${s}`) !== `status.${s}`
+      ? this._text(`status.${s}`)
+      : s.charAt(0).toUpperCase() + s.slice(1);
   },
 
   _statusColor(s) {
@@ -251,7 +458,7 @@ Module.register("MMM-BambuLabNotify", {
 
       const text = document.createElement("div");
       text.style.cssText = "display:flex; flex-direction:column; gap:6px; max-width: 56vw;";
-      const t = document.createElement("div"); t.textContent = title || "Notification";
+      const t = document.createElement("div"); t.textContent = title || this._text("toast.notification");
       const m = document.createElement("div"); m.textContent = message || ""; m.style.fontWeight = "500";
       text.appendChild(t); text.appendChild(m);
 
@@ -300,7 +507,7 @@ Module.register("MMM-BambuLabNotify", {
 
       const text = document.createElement("div");
       text.style.cssText = "display:flex; flex-direction:column; gap:2px;";
-      const t = document.createElement("div"); t.textContent = title || "Notification";
+      const t = document.createElement("div"); t.textContent = title || this._text("toast.notification");
       const m = document.createElement("div"); m.textContent = message || ""; m.style.fontWeight = "500";
       text.appendChild(t); text.appendChild(m);
 

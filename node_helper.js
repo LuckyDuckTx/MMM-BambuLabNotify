@@ -11,6 +11,27 @@ const mqtt = require("mqtt");
 const lower = (x) => (x ?? "").toString().toLowerCase();
 const pick = (...v) => v.find((x) => x !== undefined && x !== null && x !== "");
 const isNum = (n) => typeof n === "number" && isFinite(n);
+const BN_DEFAULT_TEXT = {
+  fallbackPrinterName: "Bambu Printer",
+  toast: {
+    startTitle: "{printer} Print Started",
+    startMessage: "{file} started",
+    startFallbackMessage: "Print job started",
+    doneTitle: "{printer} Print Complete",
+    doneMessage: "{file} finished (100%).",
+    doneFallbackFile: "Job",
+    pauseTitle: "{printer} Paused",
+    pauseMessage: "{file} paused.",
+    pauseFallbackMessage: "Print paused.",
+    cancelTitle: "{printer} Print Canceled",
+    cancelMessage: "{file} was canceled.",
+    cancelFallbackMessage: "Print job canceled.",
+    errorTitle: "{printer} Error",
+    errorFallbackMessage: "{file} reported an error state.",
+    idleTitle: "{printer} Idle",
+    idleMessage: "Ready for next job."
+  }
+};
 
 function fmtMinutes(mins) {
   if (!isNum(mins) || mins < 0) return null;
@@ -26,6 +47,149 @@ function cleanErrorText(...c) {
     return s;
   }
   return "";
+}
+
+function mergeText(defaults, custom) {
+  const merged = {};
+  const source = custom && typeof custom === "object" ? custom : {};
+  Object.keys(defaults).forEach((key) => {
+    if (defaults[key] && typeof defaults[key] === "object" && !Array.isArray(defaults[key])) {
+      merged[key] = Object.assign({}, defaults[key], source[key] || {});
+    } else {
+      merged[key] = source[key] !== undefined ? source[key] : defaults[key];
+    }
+  });
+  return merged;
+}
+
+function template(text, values = {}) {
+  return String(text || "").replace(/\{(\w+)\}/g, (_, key) => (
+    values[key] !== undefined && values[key] !== null ? String(values[key]) : ""
+  ));
+}
+
+function numOrNull(v) {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeAmsColor(color) {
+  if (!color) return "";
+  const s = String(color).trim().replace(/^#/, "");
+  return /^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s) ? s.slice(0, 6).toUpperCase() : "";
+}
+
+function normalizeSlot(slot) {
+  if (slot === undefined || slot === null || slot === "") return "";
+  const n = Number(slot);
+  return Number.isFinite(n) ? String(n + 1) : String(slot);
+}
+
+function extractTemperatures(print = {}, msg = {}) {
+  const nozzle = numOrNull(pick(
+    print.nozzle_temper, print.nozzle_temp, print.hotend_temper, print.hotend_temp,
+    msg.nozzle_temper, msg.nozzle_temp
+  ));
+  const nozzleTarget = numOrNull(pick(
+    print.nozzle_target_temper, print.nozzle_target_temp, print.target_nozzle_temper, print.nozzle_temper_target,
+    msg.nozzle_target_temper, msg.nozzle_target_temp
+  ));
+  const bed = numOrNull(pick(
+    print.bed_temper, print.bed_temp, print.heatbed_temper, print.heatbed_temp,
+    msg.bed_temper, msg.bed_temp
+  ));
+  const bedTarget = numOrNull(pick(
+    print.bed_target_temper, print.bed_target_temp, print.target_bed_temper, print.bed_temper_target,
+    msg.bed_target_temper, msg.bed_target_temp
+  ));
+
+  if ([nozzle, nozzleTarget, bed, bedTarget].every((v) => v === null)) return null;
+  return { nozzle, nozzleTarget, bed, bedTarget };
+}
+
+function mergeTemperatures(next, prev) {
+  if (!next) return prev || null;
+  const merged = Object.assign({}, prev || {});
+  ["nozzle", "nozzleTarget", "bed", "bedTarget"].forEach((key) => {
+    if (next[key] !== null && next[key] !== undefined) merged[key] = next[key];
+  });
+
+  return ["nozzle", "nozzleTarget", "bed", "bedTarget"].some((key) => isNum(merged[key])) ? merged : null;
+}
+
+function extractFilaments(print = {}) {
+  const amsRoot = print.ams || {};
+  const units = Array.isArray(amsRoot.ams) ? amsRoot.ams : [];
+  const activeAms = pick(amsRoot.ams_id, amsRoot.ams_now, print.ams_id, print.ams_now);
+  const activeTray = pick(
+    amsRoot.tray_now,
+    amsRoot.tray_tar,
+    amsRoot.tray_id,
+    print.tray_id,
+    print.tray_now,
+    print.vt_tray?.id
+  );
+  const filaments = [];
+
+  const addTray = (tray, amsId, fallbackSlot) => {
+    if (!tray || typeof tray !== "object") return;
+    const rawSlot = pick(tray.id, tray.tray_id, fallbackSlot);
+
+    const hasTrayDetails = [
+      tray.tray_sub_brands,
+      tray.tray_type,
+      tray.tray_info_idx,
+      tray.tray_color,
+      tray.color,
+      tray.filament_colour,
+      tray.filament_color
+    ].some((v) => v !== undefined && v !== null && v !== "");
+
+    const type = pick(
+      tray.tray_sub_brands,
+      tray.tray_type,
+      tray.tray_info_idx,
+      tray.filament_type,
+      tray.name
+    );
+    const color = normalizeAmsColor(pick(tray.tray_color, tray.color, tray.filament_colour, tray.filament_color));
+    const empty = !hasTrayDetails || (!type && !color);
+
+    const slot = normalizeSlot(rawSlot);
+    const active = String(activeAms ?? amsId ?? "") === String(amsId ?? "") &&
+      String(activeTray ?? "") !== "" &&
+      String(activeTray) === String(rawSlot ?? "");
+
+    filaments.push({
+      ams: amsId != null ? String(amsId) : "",
+      slot,
+      type: type ? String(type) : "",
+      color,
+      active,
+      empty
+    });
+  };
+
+  units.forEach((unit, unitIndex) => {
+    const amsId = pick(unit.id, unit.ams_id, unitIndex);
+    const trays = Array.isArray(unit.tray) ? unit.tray : [];
+    trays.forEach((tray, trayIndex) => addTray(tray, amsId, trayIndex));
+  });
+
+  if (!filaments.length && Array.isArray(amsRoot.tray)) {
+    amsRoot.tray.forEach((tray, trayIndex) => addTray(tray, activeAms, trayIndex));
+  }
+
+  if (!filaments.length && print.vt_tray && typeof print.vt_tray === "object") {
+    addTray(print.vt_tray, activeAms, activeTray);
+  }
+
+  return filaments;
+}
+
+function stableJson(value) {
+  return JSON.stringify(value || null);
 }
 
 function looksIdlePrintObj(p) {
@@ -62,6 +226,8 @@ module.exports = NodeHelper.create({
     this.lastEtaMins = null;
     this.layerNum = null;
     this.layerTotal = null;
+    this.lastTemperatures = null;
+    this.lastFilaments = [];
     this.lastBucket = null;
     this.lastErrorText = "";
 
@@ -121,8 +287,10 @@ module.exports = NodeHelper.create({
       assumeIdleAfterMs: 8000,       // fallback after subscribe -> Idle
       seqResetAfterMs: 60 * 60 * 1000, // reset seq tracking if no msgs for this long
       idleAfterCancelMs: 60000,      // when to auto-reset to idle after cancel
-      cancelGuardMs: 60000           // suppress FAILED/error noise right after cancel
+      cancelGuardMs: 60000,          // suppress FAILED/error noise right after cancel
+      text: BN_DEFAULT_TEXT
     }, cfg || {});
+    this.config.text = mergeText(BN_DEFAULT_TEXT, this.config.text);
 
     if (!this.config.serial) {
       console.error("[MMM-BambuLabNotify] Missing 'serial' in config.");
@@ -147,8 +315,6 @@ module.exports = NodeHelper.create({
     this.client = mqtt.connect(url, options);
 
     const topicReport = `device/${this.config.serial}/report`;
-    const P = this.config.printerName || "Printer";
-
     this.client.on("connect", (connack) => {
       this.connected = true;
       this.lastState = "connecting";
@@ -179,8 +345,6 @@ module.exports = NodeHelper.create({
     this.client.on("reconnect", () => {
       if (this.config.logRaw) console.log("[MMM-BambuLabNotify] Reconnecting...");
       this.connected = false;
-      // removed to prevent continuous connecting notification when printer is off
-      // this.sendSocketNotification("BN_PROGRESS", { state: "connecting", percent: null, file: "" });
     });
 
     this.client.on("close", () => {
@@ -340,6 +504,10 @@ module.exports = NodeHelper.create({
         layerStr = `${this.layerNum}/${this.layerTotal}`;
       }
 
+      const temperatures = mergeTemperatures(extractTemperatures(print, msg), this.lastTemperatures);
+      const filaments = extractFilaments(print);
+      const amsFilaments = filaments.length ? filaments : this.lastFilaments;
+
       // Infer state from event or percent if still unknown
       const event = lower(pick(msg.event, msg.type));
       if (!state && event) {
@@ -419,10 +587,11 @@ module.exports = NodeHelper.create({
       // Cancel flow
       if (stateChanged && state === "canceled") { 
         if (this.config.showOnCancel) {
+          const Pname = this.config.printerName || this._text("fallbackPrinterName");
           this._alertOnce(
             "cancel",
-            `${this.config.printerName || "Printer"} Print Canceled`,
-            this.lastFile ? `${this.lastFile} was canceled.` : "Print job canceled.",
+            this._text("toast.cancelTitle", { printer: Pname, file: this.lastFile || "" }),
+            this.lastFile ? this._text("toast.cancelMessage", { printer: Pname, file: this.lastFile }) : this._text("toast.cancelFallbackMessage", { printer: Pname }),
             8000,
             "error"
           );
@@ -472,11 +641,12 @@ module.exports = NodeHelper.create({
         !pausedStrict &&
         !justPaused;
 
-      const Pname = this.config.printerName || "Printer";
+      const Pname = this.config.printerName || this._text("fallbackPrinterName");
 
       if (this.config.showOnStart && canStartToast) {
-        this._alertOnce("start", `${Pname} Print Started`,
-          file ? `${file} started` : "Print job started",
+        this._alertOnce("start",
+          this._text("toast.startTitle", { printer: Pname, file }),
+          file ? this._text("toast.startMessage", { printer: Pname, file }) : this._text("toast.startFallbackMessage", { printer: Pname, file }),
           this.config.toastDurationMs, "start");
       }
 
@@ -485,8 +655,8 @@ module.exports = NodeHelper.create({
       if (this.config.showOnDone && recentlyActive && (isFinishState || (this.lastState === "running" && reached100))) {
         this._alertOnce(
           "done",
-          `${Pname} Print Complete`,
-          `${(this.lastFile || "Job")} finished (100%).`,
+          this._text("toast.doneTitle", { printer: Pname, file: this.lastFile || "" }),
+          this._text("toast.doneMessage", { printer: Pname, file: this.lastFile || this._text("toast.doneFallbackFile") }),
           this.config.toastDurationMs,
           "done"
         );
@@ -497,8 +667,8 @@ module.exports = NodeHelper.create({
         if (this.config.showOnPause) {
           this._alertOnce(
             "pause",
-            `${Pname} Paused`,
-            this.lastFile ? `${this.lastFile} paused.` : "Print paused.",
+            this._text("toast.pauseTitle", { printer: Pname, file: this.lastFile || "" }),
+            this.lastFile ? this._text("toast.pauseMessage", { printer: Pname, file: this.lastFile }) : this._text("toast.pauseFallbackMessage", { printer: Pname }),
             this.config.toastDurationMs,
             "info"
           );
@@ -518,11 +688,11 @@ module.exports = NodeHelper.create({
 
       if (!inCancelGuard && this.config.showOnError && recentlyActive) {
         if (becameError && !newMeaningfulErr) {
-          this._alertOnce("error", `${Pname} Error`,
-            `${file || "Printer"} reported an error state.`,
+          this._alertOnce("error", this._text("toast.errorTitle", { printer: Pname, file: file || "" }),
+            this._text("toast.errorFallbackMessage", { printer: Pname, file: file || Pname }),
             this.config.toastDurationMs, "error");
         } else if (newMeaningfulErr) {
-          this._alertOnce("error", `${Pname} Error`,
+          this._alertOnce("error", this._text("toast.errorTitle", { printer: Pname, file: file || "" }),
             errText.slice(0, 200),
             this.config.toastDurationMs, "error");
           this.lastErrorText = errText;
@@ -546,11 +716,15 @@ module.exports = NodeHelper.create({
       }
       const bucketChanged = (bucket !== null && bucket !== this.lastBucket);
       const etaChanged = (isNum(etaMins) ? etaMins : null) !== (this.lastEtaMins ?? null);
+      const tempsChanged = stableJson(temperatures) !== stableJson(this.lastTemperatures);
+      const filamentsChanged = stableJson(amsFilaments) !== stableJson(this.lastFilaments);
 
-      if (stateChanged || bucketChanged || etaChanged) {
+      if (stateChanged || bucketChanged || etaChanged || tempsChanged || filamentsChanged) {
         const payload = {
           remaining: etaStr || null,
           layers: layerStr,
+          temperatures: temperatures || null,
+          filaments: amsFilaments || [],
           file: this.lastFile || "",
           state: state || this.lastState || "running"
         };
@@ -567,6 +741,8 @@ module.exports = NodeHelper.create({
       if (isNum(percent)) this.lastPercent = percent;
       if (bucket !== null) this.lastBucket = bucket;
       if (isNum(etaMins)) this.lastEtaMins = etaMins;
+      if (temperatures) this.lastTemperatures = temperatures;
+      if (filaments.length) this.lastFilaments = filaments;
       if (state && state !== "error") this.lastErrorText = "";
     });
   },
@@ -655,7 +831,7 @@ module.exports = NodeHelper.create({
   },
 
   _setIdleAndBroadcast(showToast = false) {
-    const P = this.config.printerName || "Printer";
+    const P = this.config.printerName || this._text("fallbackPrinterName");
     this.lastState = "idle";
     this.lastStateAt = Date.now();
     this.lastPercent = null;
@@ -667,10 +843,22 @@ module.exports = NodeHelper.create({
     this.lastActiveAt = 0;
 
     if (showToast && this.config.showOnIdle) {
-      this._alertOnce("idle", `${P} Idle`, "Ready for next job.", 6000, "connected");
+      this._alertOnce(
+        "idle",
+        this._text("toast.idleTitle", { printer: P }),
+        this._text("toast.idleMessage", { printer: P }),
+        6000,
+        "connected"
+      );
     }
     this.sendSocketNotification("BN_PROGRESS", {
-      percent: null, remaining: null, file: "", state: "idle", layers: ""
+      percent: null,
+      remaining: null,
+      file: "",
+      state: "idle",
+      layers: "",
+      temperatures: this.lastTemperatures || null,
+      filaments: this.lastFilaments || []
     });
   },
 
@@ -680,6 +868,16 @@ module.exports = NodeHelper.create({
     this.lastAlertAt[key] = now;
     console.log(`[MMM-BambuLabNotify] ALERT → ${title}: ${message}`);
     this.sendSocketNotification("BN_ALERT", { title, message, timer, kind });
+  },
+
+  _text(path, values = {}) {
+    const parts = path.split(".");
+    let value = this.config.text || BN_DEFAULT_TEXT;
+    for (const part of parts) {
+      value = value && value[part];
+    }
+    if (value === undefined || value === null || value === "") value = path;
+    return template(value, values);
   },
 
   stop() {

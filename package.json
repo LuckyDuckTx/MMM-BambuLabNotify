@@ -1,6 +1,6 @@
 {
   "name": "mmm-bambulabnotify",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "main": "MMM-BambuLabNotify.js",
   "description": "A MagicMirror² module that provides real-time notifications and status updates from your Bambu Lab printer (tested with A1, should also work with A1 Mini, X1 and P1 series).",
   "keywords": [
