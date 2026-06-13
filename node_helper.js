@@ -77,6 +77,7 @@ function numOrNull(v) {
 function normalizeAmsColor(color) {
   if (!color) return "";
   const s = String(color).trim().replace(/^#/, "");
+  if (/^[0-9a-f]{8}$/i.test(s) && s.slice(6, 8).toUpperCase() === "00") return "";
   return /^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s) ? s.slice(0, 6).toUpperCase() : "";
 }
 
@@ -132,19 +133,9 @@ function extractFilaments(print = {}) {
   );
   const filaments = [];
 
-  const addTray = (tray, amsId, fallbackSlot) => {
+  const addTray = (tray, amsId, fallbackSlot, options = {}) => {
     if (!tray || typeof tray !== "object") return;
     const rawSlot = pick(tray.id, tray.tray_id, fallbackSlot);
-
-    const hasTrayDetails = [
-      tray.tray_sub_brands,
-      tray.tray_type,
-      tray.tray_info_idx,
-      tray.tray_color,
-      tray.color,
-      tray.filament_colour,
-      tray.filament_color
-    ].some((v) => v !== undefined && v !== null && v !== "");
 
     const type = pick(
       tray.tray_sub_brands,
@@ -154,9 +145,11 @@ function extractFilaments(print = {}) {
       tray.name
     );
     const color = normalizeAmsColor(pick(tray.tray_color, tray.color, tray.filament_colour, tray.filament_color));
+    const hasTrayDetails = !!(type || color);
     const empty = !hasTrayDetails || (!type && !color);
+    if (options.external && empty) return;
 
-    const slot = normalizeSlot(rawSlot);
+    const slot = options.slot || normalizeSlot(rawSlot);
     const active = String(activeAms ?? amsId ?? "") === String(amsId ?? "") &&
       String(activeTray ?? "") !== "" &&
       String(activeTray) === String(rawSlot ?? "");
@@ -167,7 +160,8 @@ function extractFilaments(print = {}) {
       type: type ? String(type) : "",
       color,
       active,
-      empty
+      empty,
+      external: !!options.external
     });
   };
 
@@ -181,8 +175,8 @@ function extractFilaments(print = {}) {
     amsRoot.tray.forEach((tray, trayIndex) => addTray(tray, activeAms, trayIndex));
   }
 
-  if (!filaments.length && print.vt_tray && typeof print.vt_tray === "object") {
-    addTray(print.vt_tray, activeAms, activeTray);
+  if (print.vt_tray && typeof print.vt_tray === "object") {
+    addTray(print.vt_tray, activeAms, activeTray, { external: true, slot: "Ext" });
   }
 
   return filaments;
@@ -226,6 +220,7 @@ module.exports = NodeHelper.create({
     this.lastEtaMins = null;
     this.layerNum = null;
     this.layerTotal = null;
+    this.lastLayerStr = "";
     this.lastTemperatures = null;
     this.lastFilaments = [];
     this.lastBucket = null;
@@ -277,7 +272,7 @@ module.exports = NodeHelper.create({
       showOnIdle: true,
       showOnCancel: true,
 
-      progressStep: 5,
+      progressStep: 1,
       debounceMs: 15000,
       logRaw: false,
       logOnChange: false,
@@ -318,6 +313,11 @@ module.exports = NodeHelper.create({
     this.client.on("connect", (connack) => {
       this.connected = true;
       this.lastState = "connecting";
+      this.lastSeqStatus = -1;
+      this.lastSeqCmd = -1;
+      this._lastPingReqAt = 0;
+      this._lastPingRespAt = 0;
+      this._lastReconnectAt = Date.now();
       console.log("[MMM-BambuLabNotify] Connected...");
 
       setTimeout(() => {
@@ -711,15 +711,16 @@ module.exports = NodeHelper.create({
       // Progress buckets
       let bucket = null;
       if (isNum(percent)) {
-        const step = Math.max(1, Number(this.config.progressStep) || 5);
+        const step = Math.max(1, Number(this.config.progressStep) || 1);
         bucket = Math.floor(percent / step);
       }
       const bucketChanged = (bucket !== null && bucket !== this.lastBucket);
       const etaChanged = (isNum(etaMins) ? etaMins : null) !== (this.lastEtaMins ?? null);
+      const layerChanged = layerStr !== (this.lastLayerStr || "");
       const tempsChanged = stableJson(temperatures) !== stableJson(this.lastTemperatures);
       const filamentsChanged = stableJson(amsFilaments) !== stableJson(this.lastFilaments);
 
-      if (stateChanged || bucketChanged || etaChanged || tempsChanged || filamentsChanged) {
+      if (stateChanged || bucketChanged || etaChanged || layerChanged || tempsChanged || filamentsChanged) {
         const payload = {
           remaining: etaStr || null,
           layers: layerStr,
@@ -741,6 +742,7 @@ module.exports = NodeHelper.create({
       if (isNum(percent)) this.lastPercent = percent;
       if (bucket !== null) this.lastBucket = bucket;
       if (isNum(etaMins)) this.lastEtaMins = etaMins;
+      this.lastLayerStr = layerStr;
       if (temperatures) this.lastTemperatures = temperatures;
       if (filaments.length) this.lastFilaments = filaments;
       if (state && state !== "error") this.lastErrorText = "";
@@ -840,6 +842,7 @@ module.exports = NodeHelper.create({
     this.lastFile = "";
     this.layerNum = null;
     this.layerTotal = null;
+    this.lastLayerStr = "";
     this.lastActiveAt = 0;
 
     if (showToast && this.config.showOnIdle) {

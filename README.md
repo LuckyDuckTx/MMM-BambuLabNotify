@@ -1,10 +1,10 @@
 # MMM-BambuLabNotify
 
 [![MagicMirror² Module](https://img.shields.io/badge/MagicMirror²-Module-blue)](https://magicmirror.builders/)
-[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.1-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)]()
 
-A [MagicMirror²](https://magicmirror.builders/) module that provides **real-time notifications and status updates** from your **Bambu Lab printer** (tested with A1, should also work with A1 Mini, X1 and P1 series).  
+A [MagicMirror²](https://magicmirror.builders/) module that provides **real-time notifications and status updates** from your **Bambu Lab printer**.  
 
 It connects to the printer’s local MQTT broker and shows toast notifications and a status panel for print events like **started, paused, canceled, finished, and error states**.
 
@@ -25,7 +25,7 @@ It connects to the printer’s local MQTT broker and shows toast notifications a
   - Layer countdown
   - Current file name
   - Nozzle and bed temperatures
-  - AMS filament type and color, with active filament indication
+  - AMS and external spool filament type and color, with active filament indication
 - 🌐 Customizable status, panel, and toast text for alternate wording or languages
 
 ---
@@ -126,6 +126,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full list of changes in version 1.5.
 | `displayTemperatures` | Boolean | `true`      | Show nozzle and bed temperatures in the status panel.                                                  |
 | `displayAms`        | Boolean | `true`       | Show detected AMS filament type and color in the status panel.                                         |
 | `temperatureUnit`   | String  | `C`          | Temperature unit used in the panel. Use `"C"` for Celsius or `"F"` for Fahrenheit.                     |
+| `textSize`          | String  | `medium`     | Panel text size. Use `"small"`, `"medium"`, or `"large"`.                                              |
 | `text`              | Object  | See below  | Optional labels and toast text overrides. Supports `{printer}` and `{file}` placeholders in toast text. |
 | ** Toast Messages ** ||||
 | `toastDurationMs`   | Number  | `60000`      | How long toast notifications remain visible (milliseconds).                                           |
@@ -140,7 +141,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full list of changes in version 1.5.
 | `port`              | Number  | `8883`       | MQTT Port on printer                                                                                  |
 | `user`              | String  | `bblp`       | MQTT user on printer                                                                                  |
 | `idleAfterCancelMs` | Number  | `60000`      | Time after cancel before panel resets to Idle (milliseconds).                                         |
-| `progressStep`      | Number  | `5`          | Bucket size for progress updates. Example: `5` → updates at 0%, 5%, 10% …                             |
+| `progressStep`      | Number  | `1`          | Bucket size for percent progress updates. Example: `5` → percent redraws at 0%, 5%, 10% … Other panel data can refresh independently. |
 | `debounceMs`        | Number  | `15000`      | Minimum time between identical toast notifications (prevents spam).                                   |
 | `logRaw`            | Boolean | `false`      | If `true`, logs every raw MQTT message to console (very noisy).                                       |
 | `logOnChange`       | Boolean | `false`      | Logs only when state changes (recommended for debugging).                                            |
@@ -213,6 +214,7 @@ text: {
     nozzle: "Nozzle:",
     bed: "Bed:",
     empty: "Empty",
+    external: "Ext",
     job: "Job:",
     tray: "Tray"
   },
@@ -254,7 +256,7 @@ temperatureUnit: "F" // Fahrenheit
 
 ## AMS Compatibility
 
-AMS details are shown when the printer includes AMS tray data in its status payload. This release was tested against A1/AMS Lite-style payloads.
+AMS details are shown when the printer includes AMS tray data in its status payload. External spool details are shown when the printer includes a populated `vt_tray` object. This release was tested against A1/AMS Lite-style payloads.
 
 Note: If the MagicMirror was (re)started while the printer is idle/offline, the AMS information may not show up until a print has been started. 
 If AMS information does not appear at all, enable `logRaw: true`, restart MagicMirror, start a print, and capture a `push_status` payload from the logs.
@@ -276,6 +278,7 @@ If AMS information does not appear at all, enable `logRaw: true`, restart MagicM
 
 - During filament/color changes, the active AMS slot indicator may lag behind the printer for a short time. The module can only update after the printer sends refreshed AMS tray state in its MQTT status payload.
 - If a printer is turned off for a while, some networks may assign it a different IP address when it comes back online. If the module stops connecting after power cycling the printer, reserve a static IP for the printer in your router/DHCP settings and update `host` if needed.
+- If your External filament slot retains the last (ghost) filament data, even though you're no longer using that slot. This is on the printer side. You can clear that slot info from your printer by using Bambu Studio. Simply go to the Device tab in Bambu Studio, and select your printer. In the filament/AMS area, click the External filament slot and click Reset.
 
 ---
 
@@ -290,11 +293,5 @@ If AMS information does not appear at all, enable `logRaw: true`, restart MagicM
 ## License
 This project is licensed under the MIT License.
 
----
-
-### Credits
-
-- Created using ChatGTP/Codex
-- Module inspired and tested by LuckyDuckTx.
 ---
    

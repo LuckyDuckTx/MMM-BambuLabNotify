@@ -21,6 +21,7 @@ const BN_DEFAULT_TEXT = {
     nozzle: "Nozzle:",
     bed: "Bed:",
     empty: "Empty",
+    external: "Ext",
     job: "Job:",
     tray: "Tray"
   },
@@ -43,8 +44,9 @@ Module.register("MMM-BambuLabNotify", {
     displayTemperatures: true,
     displayAms: true,
     temperatureUnit: "C",
+    textSize: "medium",
     progressPrecision: 0,
-    progressStep: 5,
+    progressStep: 1,
     hideProgressWhenIdle: true,
     hideWhileOff: false,
     hideWhileIdle: false,
@@ -118,7 +120,7 @@ Module.register("MMM-BambuLabNotify", {
 
   getDom() {
     const wrap = document.createElement("div");
-    wrap.className = "bambu-wrap small light";
+    wrap.className = `bambu-wrap small light bambu-text-${this._textSize()}`;
 
     const status = (this.state.status || "connecting").toLowerCase();
 
@@ -180,7 +182,7 @@ Module.register("MMM-BambuLabNotify", {
 
         const rightSpan = document.createElement("span");
         rightSpan.setAttribute("style", "text-align:right;");
-        const pctText = pct ? `${pct}% ${this._text("panel.complete")}` : "";
+        const pctText = pct ? ` ${pct}% ${this._text("panel.complete")}` : "";
         const etaText = this.state.remaining ? ` • ${this._esc(this.state.remaining)} ${this._text("panel.remaining")}` : "";
         rightSpan.innerText = `${pctText}${etaText}`;
 
@@ -213,8 +215,10 @@ Module.register("MMM-BambuLabNotify", {
 
     const style = document.createElement("style");
     style.textContent = `
-      .bambu-wrap { min-width:220px; max-width:340px; }
-      .bambu-label { opacity:.95; margin-bottom:4px; }
+      .bambu-wrap { min-width:220px; max-width:340px; color:rgba(255,255,255,.96); }
+      .bambu-text-small { font-size:70%; }
+      .bambu-text-large { font-size:110%; }
+      .bambu-label { opacity:1; margin-bottom:4px; }
       .bambu-title-row {
         display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:center; gap:10px;
         width:100%;
@@ -224,7 +228,7 @@ Module.register("MMM-BambuLabNotify", {
         justify-self:start; text-align:left;
       }
       .bambu-file {
-        display:block; width:100%; max-width:100%; opacity:.85; margin-bottom:10px;
+        display:block; width:100%; max-width:100%; opacity:.94; margin-bottom:10px;
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left;
       }
       .bambu-pill {
@@ -233,9 +237,9 @@ Module.register("MMM-BambuLabNotify", {
         font-weight:700; font-size:90%; justify-self:end;
       }
       .bambu-bar { position:relative; height:6px; border-radius:999px; background:rgba(255,255,255,.18); overflow:hidden; }
-      .bambu-fill { position:absolute; inset:0 auto 0 0; width:0%; background:rgba(255,255,255,.75); }
-      .bambu-meta { margin-top:6px; opacity:.9; }
-      .bambu-detail { margin-top:7px; opacity:.9; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .bambu-fill { position:absolute; inset:0 auto 0 0; width:0%; background:#22c55e; }
+      .bambu-meta { margin-top:6px; opacity:.95; }
+      .bambu-detail { margin-top:7px; opacity:.95; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
       .bambu-temp.bambu-detail { margin-top:12px; }
       .bambu-temp { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
       .bambu-temp-item {
@@ -243,7 +247,7 @@ Module.register("MMM-BambuLabNotify", {
         padding:1px 6px; border-radius:999px; border:1px solid rgba(255,255,255,.18);
         background:rgba(255,255,255,.06); line-height:1.35;
       }
-      .bambu-temp-label { opacity:.72; font-weight:700; flex:0 0 auto; }
+      .bambu-temp-label { opacity:.85; font-weight:700; flex:0 0 auto; }
       .bambu-temp-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .bambu-filaments { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
       .bambu-filament {
@@ -252,13 +256,13 @@ Module.register("MMM-BambuLabNotify", {
         background:rgba(255,255,255,.08); line-height:1.35;
       }
       .bambu-filament-active { border-color:rgba(255,255,255,.75); background:rgba(255,255,255,.16); }
-      .bambu-filament-empty { opacity:.58; border-style:dashed; }
+      .bambu-filament-empty { opacity:.70; border-style:dashed; }
       .bambu-swatch {
         width:10px; height:10px; flex:0 0 10px; border-radius:50%;
         border:1px solid rgba(255,255,255,.75); box-shadow:0 0 0 1px rgba(0,0,0,.25);
       }
       .bambu-filament-active .bambu-swatch { animation:bambu-pulse 2.4s ease-in-out infinite; }
-      .bambu-slot { opacity:.72; font-weight:700; flex:0 0 auto; }
+      .bambu-slot { opacity:.85; font-weight:700; flex:0 0 auto; }
       .bambu-filament-label { max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       @keyframes bambu-pulse {
         0%, 100% { transform:scale(1); box-shadow:0 0 0 1px rgba(0,0,0,.25), 0 0 0 0 rgba(255,255,255,.42); }
@@ -359,7 +363,8 @@ Module.register("MMM-BambuLabNotify", {
 
       const slot = document.createElement("span");
       slot.className = "bambu-slot";
-      slot.innerText = filament.slot ? `${filament.slot}:` : "";
+      const slotLabel = filament.external ? this._text("panel.external") : filament.slot;
+      slot.innerText = slotLabel ? `${slotLabel}:` : "";
       chip.appendChild(slot);
 
       const label = document.createElement("span");
@@ -379,6 +384,11 @@ Module.register("MMM-BambuLabNotify", {
     if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s)) return s.slice(0, 7);
     if (/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s)) return `#${s.slice(0, 6)}`;
     return "";
+  },
+
+  _textSize() {
+    const size = String(this.config.textSize || "medium").toLowerCase();
+    return ["small", "medium", "large"].includes(size) ? size : "medium";
   },
 
   _mergeText(defaults, custom) {
