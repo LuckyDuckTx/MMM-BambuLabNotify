@@ -181,7 +181,7 @@ Module.register("MMM-BambuLabNotify", {
         leftSpan.innerText = this.state.layers ? `${this._text("panel.layers")} ${this.state.layers}` : "";
 
         const rightSpan = document.createElement("span");
-        rightSpan.setAttribute("style", "text-align:right;");
+        rightSpan.setAttribute("style", "text-align:right; padding-left: 10px;");
         const pctText = pct ? ` ${pct}% ${this._text("panel.complete")}` : "";
         const etaText = this.state.remaining ? ` • ${this._esc(this.state.remaining)} ${this._text("panel.remaining")}` : "";
         rightSpan.innerText = `${pctText}${etaText}`;

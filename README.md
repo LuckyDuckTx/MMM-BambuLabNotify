@@ -1,7 +1,7 @@
 # MMM-BambuLabNotify
 
 [![MagicMirror² Module](https://img.shields.io/badge/MagicMirror²-Module-blue)](https://magicmirror.builders/)
-[![Version](https://img.shields.io/badge/version-1.5.1-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.2-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)]()
 
 A [MagicMirror²](https://magicmirror.builders/) module that provides **real-time notifications and status updates** from your **Bambu Lab printer**.  
@@ -276,7 +276,7 @@ If AMS information does not appear at all, enable `logRaw: true`, restart MagicM
 
 ## ⚠️ Known Issues
 
-- During filament/color changes, the active AMS slot indicator may lag behind the printer for a short time. The module can only update after the printer sends refreshed AMS tray state in its MQTT status payload.
+- During filament/color changes, the active AMS slot indicator may lag behind the printer for a short time. The module can only update after the printer sends refreshed AMS tray state in its MQTT status payload. This might become more apparent on rapid filament changes, where a filament/color is only used for a new moments.
 - If a printer is turned off for a while, some networks may assign it a different IP address when it comes back online. If the module stops connecting after power cycling the printer, reserve a static IP for the printer in your router/DHCP settings and update `host` if needed.
 - If your External filament slot retains the last (ghost) filament data, even though you're no longer using that slot. This is on the printer side. You can clear that slot info from your printer by using Bambu Studio. Simply go to the Device tab in Bambu Studio, and select your printer. In the filament/AMS area, click the External filament slot and click Reset.
 

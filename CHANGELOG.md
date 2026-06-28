@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.2 - 2026-06-26
+
+### Fixed
+- Minor spacing issue between layer counter and percent completed. 
+- Now automatically requests a full printer status snapshot when active print updates are missing information.
+
 ## 1.5.1 - 2026-06-11
 
 ### Added

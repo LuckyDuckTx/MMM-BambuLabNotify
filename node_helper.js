@@ -246,6 +246,7 @@ module.exports = NodeHelper.create({
     this._lastPingRespAt = 0;
     this._lastReconnectAt = 0;
     this._lastSubscribeAt = 0;
+    this._lastFullStatusReqAt = 0;
 
     // After long idle, allow printer sequence_id to wrap/restart without dropping messages
     this._seqResetAfterMs = Math.max(5 * 60 * 1000, Number(this.config.seqResetAfterMs) || 60 * 60 * 1000);
@@ -583,6 +584,9 @@ module.exports = NodeHelper.create({
       if (isActiveState || isActivelyPrintingTick) {
         this.lastActiveAt = nowTs;
       }
+      if (isActiveState || isActivelyPrintingTick || print.mc_print_stage !== undefined || print.mc_print_sub_stage !== undefined) {
+        this._requestFullStatusIfMissing(print, state, percent);
+      }
 
       // Cancel flow
       if (stateChanged && state === "canceled") { 
@@ -863,6 +867,58 @@ module.exports = NodeHelper.create({
       temperatures: this.lastTemperatures || null,
       filaments: this.lastFilaments || []
     });
+  },
+
+  _requestFullStatusIfMissing(print = {}, state = "", percent = null) {
+    const looksActive = state === "preparing" || state === "running" || state === "paused" ||
+      isNum(percent) || print.layer_num !== undefined ||
+      print.mc_print_stage !== undefined || print.mc_print_sub_stage !== undefined;
+    if (!looksActive) return;
+
+    const hasFile = !!pick(print.gcode_file, print.subtask_name, this.lastFile);
+    const hasLayers = pick(print.layer_num, this.layerNum) !== undefined &&
+      pick(print.total_layer_num, this.layerTotal) !== undefined;
+    const hasTargets = pick(
+      print.nozzle_target_temper, print.nozzle_target_temp, print.target_nozzle_temper,
+      print.bed_target_temper, print.bed_target_temp, print.target_bed_temper,
+      this.lastTemperatures?.nozzleTarget, this.lastTemperatures?.bedTarget
+    ) !== undefined;
+    const hasAms = !!(print.ams && (
+      (Array.isArray(print.ams.ams) && print.ams.ams.some((unit) => Array.isArray(unit.tray))) ||
+      Array.isArray(print.ams.tray)
+    )) || this.lastFilaments.length > 0;
+
+    if (hasFile && hasLayers && hasTargets && hasAms) return;
+    this._requestFullStatus();
+  },
+
+  _requestFullStatus() {
+    if (!this.client || !this.config.serial) return;
+    const now = Date.now();
+    if (now - (this._lastFullStatusReqAt || 0) < 60_000) return;
+    this._lastFullStatusReqAt = now;
+
+    const topicRequest = `device/${this.config.serial}/request`;
+    const payload = JSON.stringify({
+      pushing: {
+        sequence_id: String(Date.now()),
+        command: "pushall"
+      }
+    });
+
+    try {
+      this.client.publish(topicRequest, payload, { qos: 0 }, (err) => {
+        if (err && this.config.logOnChange) {
+          console.log("[MMM-BambuLabNotify] Full status request failed:", err.message || err);
+        } else if (this.config.logOnChange) {
+          console.log("[MMM-BambuLabNotify] Requested full printer status snapshot.");
+        }
+      });
+    } catch (err) {
+      if (this.config.logOnChange) {
+        console.log("[MMM-BambuLabNotify] Full status request error:", err.message || err);
+      }
+    }
   },
 
   _alertOnce(key, title, message, timer = 8000, kind = "info") {
