@@ -4,11 +4,14 @@
   "main": "MMM-BambuLabNotify.js",
   "description": "A MagicMirror² module that provides real-time notifications and status updates from your Bambu Lab printer.",
   "keywords": [
-    "magic mirror",
+    "Smart Home",
+    "Magic Mirror",
     "smart mirror",
     "module",
     "3D Printer",
-    "Bambulab"
+    "3D Printing",
+    "Bambulab", 
+    "MQTT"
   ],
   "homepage": "https://github.com/LuckyDuckTx/MMM-BambuLabNotify",
   "repository": {
